@@ -2,26 +2,38 @@ package client.ui;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.geom.RoundRectangle2D;
+import java.awt.AlphaComposite;
 
 public class RoundButton extends JButton {
 
-    // 기본 오렌지 계열 색 (위 / 아래)
-    private Color topColor    = new Color(0xFFB84D); // 밝은 오렌지
-    private Color bottomColor = new Color(0xFF9800); // 진한 오렌지
-    private int cornerRadius  = 18;                  // 모서리 둥근 정도
+    private boolean hover = false;
 
     public RoundButton(String text) {
         super(text);
 
-        // 기본 버튼 UI 비활성화
-        setOpaque(false);
-        setContentAreaFilled(false);
-        setBorderPainted(false);
+        setOpaque(false);              // 완전 투명 컴포넌트
         setFocusPainted(false);
+        setBorderPainted(false);
+        setContentAreaFilled(false);
+        setRolloverEnabled(true);
+        setBorder(null);
+        setMargin(new Insets(0, 0, 0, 0));
 
-        setForeground(Color.WHITE);  // 글자색
-        setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        setMargin(new Insets(8, 24, 8, 24));
+        // hover 이벤트
+        addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                hover = true;
+                repaint();
+            }
+
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                hover = false;
+                repaint();
+            }
+        });
     }
 
     @Override
@@ -32,55 +44,41 @@ public class RoundButton extends JButton {
 
         int w = getWidth();
         int h = getHeight();
+        int arc = 25;
 
-        // hover / press 에 따라 약간 명도 조정
-        ButtonModel model = getModel();
-        Color top = topColor;
-        Color bottom = bottomColor;
+        // 1️⃣ 이전에 그려져 있던 내용 완전히 지우기 (투명으로 초기화)
+        g2.setComposite(AlphaComposite.Clear);
+        g2.fillRect(0, 0, w, h);
+        g2.setComposite(AlphaComposite.SrcOver);
 
-        if (model.isPressed()) {
-            top = top.darker();
-            bottom = bottom.darker();
-        } else if (model.isRollover()) {
-            top = top.brighter();
-            bottom = bottom.brighter();
-        }
+        // 2️⃣ 둥근 버튼 배경(그라데이션)
+        Color top = hover ? new Color(255, 185, 80) : new Color(255, 200, 100);
+        Color bottom = hover ? new Color(255, 150, 30) : new Color(255, 160, 40);
+        GradientPaint gp = new GradientPaint(0, 0, top, 0, h, bottom);
 
-        // 1) 오렌지 배경 (사각형 + 둥근 모서리)
-        GradientPaint gp = new GradientPaint(
-                0, 0, top,
-                0, h, bottom
-        );
+        Shape round = new RoundRectangle2D.Float(0, 0, w - 1, h - 1, arc, arc);
+
         g2.setPaint(gp);
-        // 살짝 안쪽에 그려서 테두리 공간 확보
-        int x = 1;
-        int y = 1;
-        int bw = w - 3;
-        int bh = h - 3;
-        g2.fillRoundRect(x, y, bw, bh, cornerRadius, cornerRadius);
+        g2.fill(round);
 
-        // 2) 흰색 테두리
-        g2.setStroke(new BasicStroke(2f));
+        // 3️⃣ 바깥 흰 테두리
         g2.setColor(Color.WHITE);
-        g2.drawRoundRect(x, y, bw, bh, cornerRadius, cornerRadius);
+        g2.setStroke(new BasicStroke(3f));
+        g2.draw(new RoundRectangle2D.Float(1.5f, 1.5f, w - 3f, h - 3f, arc, arc));
 
-        // 3) 텍스트 직접 그리기
+        // 4️⃣ 텍스트
+        g2.setFont(getFont());
+        g2.setColor(Color.WHITE);
         FontMetrics fm = g2.getFontMetrics();
-        String text = getText();
-        int textW = fm.stringWidth(text);
-        int textH = fm.getAscent();
-
-        int tx = (w - textW) / 2;
-        int ty = (h + textH) / 2 - 2; // 살짝 위로 보정
-
-        g2.setColor(getForeground());
-        g2.drawString(text, tx, ty);
+        int textX = (w - fm.stringWidth(getText())) / 2;
+        int textY = (h + fm.getAscent()) / 2 - 2;
+        g2.drawString(getText(), textX, textY);
 
         g2.dispose();
     }
 
-    // 필요 시 외부에서 색·반경 변경 가능
-    public void setTopColor(Color c)    { this.topColor = c; repaint(); }
-    public void setBottomColor(Color c) { this.bottomColor = c; repaint(); }
-    public void setCornerRadius(int r)  { this.cornerRadius = r; repaint(); }
+    @Override
+    protected void paintBorder(Graphics g) {
+        
+    }
 }

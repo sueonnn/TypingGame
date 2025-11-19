@@ -11,6 +11,7 @@ import client.network.ServerConnection;
 import common.Protocol;
 
 public class LobbyPanel extends JPanel {
+
     private final ServerConnection connection;
     private final String playerName;
     private final String playerId;
@@ -52,7 +53,6 @@ public class LobbyPanel extends JPanel {
                 g2.dispose();
             }
         };
-
         topBar.setOpaque(false);
         topBar.setLayout(new BorderLayout());
         topBar.setBorder(BorderFactory.createEmptyBorder(10, 80, 10, 80));
@@ -88,7 +88,9 @@ public class LobbyPanel extends JPanel {
         roomTable.setShowGrid(false);
         roomTable.setIntercellSpacing(new Dimension(0, 8));
         roomTable.setOpaque(false);
+        roomTable.setBackground(new Color(0, 0, 0, 0));
 
+        // 셀 렌더러 등록
         LobbyCellRenderer cellRenderer = new LobbyCellRenderer();
         for (int i = 0; i < roomTable.getColumnCount(); i++) {
             roomTable.getColumnModel().getColumn(i).setCellRenderer(cellRenderer);
@@ -100,62 +102,13 @@ public class LobbyPanel extends JPanel {
         idColumn.setMaxWidth(0);
         idColumn.setPreferredWidth(0);
 
+        // 컬럼 대략적인 폭
         roomTable.getColumnModel().getColumn(0).setPreferredWidth(70);
         roomTable.getColumnModel().getColumn(1).setPreferredWidth(500);
         roomTable.getColumnModel().getColumn(2).setPreferredWidth(100);
         roomTable.getColumnModel().getColumn(3).setPreferredWidth(120);
 
-//        // ==== 3-2. 헤더 패널 ====
-//        JPanel headerPanel = new JPanel(new GridBagLayout());
-//        headerPanel.setOpaque(false);
-//
-//        GridBagConstraints hg = new GridBagConstraints();
-//        hg.gridy = 0;
-//        hg.insets = new Insets(0, 0, 0, 8);
-//        hg.fill = GridBagConstraints.HORIZONTAL;
-//        hg.weighty = 0;
-//
-//        JLabel noHeader = createHeaderLabel("방 번호");
-//        JLabel nameHeader = createHeaderLabel("방 이름");
-//        JLabel countHeader = createHeaderLabel("방 인원");
-//        JLabel stateHeader = createHeaderLabel("상태");
-//
-//        hg.gridx = 0;
-//        hg.weightx = 0.12;
-//        headerPanel.add(noHeader, hg);
-//
-//        hg.gridx = 1;
-//        hg.weightx = 0.53;
-//        headerPanel.add(nameHeader, hg);
-//
-//        hg.gridx = 2;
-//        hg.weightx = 0.15;
-//        headerPanel.add(countHeader, hg);
-//
-//        hg.gridx = 3;
-//        hg.weightx = 0.15;
-//        hg.insets = new Insets(0, 0, 0, 0);
-//        headerPanel.add(stateHeader, hg);
-//
-//        // ==== 3-3. 테이블 컨테이너 ====
-//        JPanel tableContainer = new JPanel(new BorderLayout());
-//        tableContainer.setOpaque(false);
-//
-//        tableContainer.setBorder(
-//                BorderFactory.createEmptyBorder(60, 200, 10, 185)
-//        );
-//
-//        JScrollPane scrollPane = new JScrollPane(roomTable);
-//        scrollPane.setOpaque(false);
-//        scrollPane.getViewport().setOpaque(false);
-//        scrollPane.setBorder(null);
-//        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-//
-//        tableContainer.add(headerPanel, BorderLayout.NORTH);
-//        tableContainer.add(scrollPane, BorderLayout.CENTER);
-//
-//        centerWrapper.add(tableContainer, BorderLayout.CENTER);
-     // ==== 3-2. 테이블 컨테이너 (칠판 안을 거의 꽉 채우도록 여백만 조금) ====
+        // ==== 3-2. 스크롤패인 / 컨테이너 ====
         JPanel tableContainer = new JPanel(new BorderLayout());
         tableContainer.setOpaque(false);
         tableContainer.setBorder(
@@ -163,17 +116,22 @@ public class LobbyPanel extends JPanel {
         );
 
         JScrollPane scrollPane = new JScrollPane(roomTable);
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.setViewportBorder(null);
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
-        scrollPane.setBorder(null);
+        scrollPane.setBackground(new Color(0, 0, 0, 0));
+        scrollPane.getViewport().setBackground(new Color(0, 0, 0, 0));
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
-        // ==== 3-3. JTable 헤더를 그대로 사용 + 스타일 적용 ====
+        // ==== 3-3. JTable 헤더 사용 ====
         JTableHeader header = roomTable.getTableHeader();
-        header.setPreferredSize(new Dimension(0, 44)); // 헤더 높이
+        header.setPreferredSize(new Dimension(0, 44));
         header.setReorderingAllowed(false);
         header.setResizingAllowed(false);
         header.setDefaultRenderer(new LobbyHeaderRenderer());
+        header.setOpaque(false);
+        header.setBackground(new Color(0, 0, 0, 0));
 
         tableContainer.add(scrollPane, BorderLayout.CENTER);
         centerWrapper.add(tableContainer, BorderLayout.CENTER);
@@ -218,7 +176,8 @@ public class LobbyPanel extends JPanel {
         requestRoomList();
     }
 
-    // ================== 로직 부분 ==================
+    // ================== 통신 / 로직 ==================
+
     public void requestRoomList() {
         connection.sendMessage(Protocol.ROOM_LIST_REQ, 0, "");
     }
@@ -289,25 +248,7 @@ public class LobbyPanel extends JPanel {
         return playerName;
     }
 
-    // ================== UI 보조 메서드 ==================
-    private JLabel createHeaderLabel(String text) {
-        JLabel label = new JLabel(text, SwingConstants.CENTER);
-        label.setFont(UITheme.SUBTITLE_FONT);
-        label.setForeground(Color.DARK_GRAY);
-        label.setPreferredSize(new Dimension(10, 44));
-
-        label.setBorder(
-                BorderFactory.createCompoundBorder(
-                        BorderFactory.createLineBorder(Color.BLACK, 2, true),
-                        BorderFactory.createEmptyBorder(5, 10, 5, 10)
-                )
-        );
-
-        label.setBackground(Color.WHITE);
-        label.setOpaque(true);
-
-        return label;
-    }
+    // ================== 셀 렌더러 / 배경 패널 ==================
 
     private static class LobbyCellRenderer extends DefaultTableCellRenderer {
         @Override
@@ -324,18 +265,16 @@ public class LobbyPanel extends JPanel {
             label.setForeground(Color.BLACK);
             label.setOpaque(false);
 
-            return new CellBackgroundPanel(label, column, isSelected);
+            return new CellBackgroundPanel(label, isSelected);
         }
     }
 
     private static class CellBackgroundPanel extends JPanel {
         private final JComponent content;
-        private final int column;
         private final boolean selected;
 
-        public CellBackgroundPanel(JComponent content, int column, boolean selected) {
+        public CellBackgroundPanel(JComponent content, boolean selected) {
             this.content = content;
-            this.column = column;
             this.selected = selected;
 
             setLayout(new BorderLayout());
@@ -347,8 +286,6 @@ public class LobbyPanel extends JPanel {
 
         @Override
         protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(
                     RenderingHints.KEY_ANTIALIASING,
@@ -357,34 +294,48 @@ public class LobbyPanel extends JPanel {
 
             int w = getWidth();
             int h = getHeight();
+            int arc = 20;
+
+            // 먼저 기존 픽셀 완전히 삭제(얇은 선 제거)
+            g2.setComposite(AlphaComposite.Clear);
+            g2.fillRect(0, 0, w, h);
+            g2.setComposite(AlphaComposite.SrcOver);
 
             Color fill = selected ? new Color(255, 220, 120) : Color.WHITE;
 
             g2.setColor(fill);
-            g2.fillRoundRect(0, 0, w - 1, h - 1, 20, 20);
+            g2.fillRoundRect(0, 0, w, h, arc, arc);
 
             g2.setColor(Color.BLACK);
-            g2.drawRoundRect(0, 0, w - 1, h - 1, 20, 20);
+            g2.setStroke(new BasicStroke(1.5f));
+            g2.drawRoundRect(1, 1, w - 2, h - 2, arc, arc);
+
+            g2.dispose();
         }
     }
- // ==== 헤더용 렌더러 (방 번호 / 방 이름 / 방 인원 / 상태) ====
+
+    // ==== 헤더용 렌더러 (방 번호 / 방 이름 / 방 인원 / 상태) ====
     private static class LobbyHeaderRenderer extends DefaultTableCellRenderer {
         @Override
-        public Component getTableCellRendererComponent(JTable table, Object value,
-                                                       boolean isSelected, boolean hasFocus,
-                                                       int row, int column) {
+        public Component getTableCellRendererComponent(
+                JTable table, Object value,
+                boolean isSelected, boolean hasFocus,
+                int row, int column
+        ) {
             JLabel label = (JLabel) super.getTableCellRendererComponent(
-                    table, value, false, false, row, column);
+                    table, value, false, false, row, column
+            );
 
             label.setHorizontalAlignment(CENTER);
             label.setFont(UITheme.SUBTITLE_FONT);
             label.setForeground(Color.DARK_GRAY);
-            label.setOpaque(false);
+            label.setOpaque(false); // 실제 배경은 아래 패널에서 그림
 
             return new HeaderBackgroundPanel(label);
         }
     }
 
+    // 헤더 배경(직각 사각형)
     private static class HeaderBackgroundPanel extends JPanel {
         private final JComponent content;
 
@@ -398,20 +349,27 @@ public class LobbyPanel extends JPanel {
 
         @Override
         protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
                                 RenderingHints.VALUE_ANTIALIAS_ON);
+
             int w = getWidth();
             int h = getHeight();
 
+            // 기존 픽셀 지우기
+            g2.setComposite(AlphaComposite.Clear);
+            g2.fillRect(0, 0, w, h);
+            g2.setComposite(AlphaComposite.SrcOver);
+
+            // 직각 흰색 카드
             g2.setColor(Color.WHITE);
-            g2.fillRoundRect(0, 0, w - 1, h - 1, 20, 20);
+            g2.fillRect(0, 0, w, h);
+
             g2.setColor(Color.BLACK);
-            g2.drawRoundRect(0, 0, w - 1, h - 1, 20, 20);
+            g2.setStroke(new BasicStroke(1.5f));
+            g2.drawRect(1, 1, w - 2, h - 2);
 
             g2.dispose();
         }
     }
-
 }

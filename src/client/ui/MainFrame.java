@@ -119,10 +119,6 @@ public class MainFrame extends JFrame {
         loginButton.setFont(UITheme.BUTTON_FONT);
         loginButton.setPreferredSize(new Dimension(150, 90));
         loginButton.addActionListener(e -> attemptLogin());
-        loginButton.setOpaque(true);
-        loginButton.setBorderPainted(false);
-        loginButton.setForeground(Color.WHITE);
-        loginButton.setBackground(Color.BLACK);
 
         gbc.gridx = 2; gbc.gridy = 0;
         gbc.gridheight = 2;                           // 닉네임/서버IP 두 줄 합치기
