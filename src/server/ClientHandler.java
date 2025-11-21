@@ -7,6 +7,7 @@ import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
 import common.Protocol;
+import common.Player;
 
 public class ClientHandler implements Runnable {
     private final Socket clientSocket;
@@ -15,6 +16,7 @@ public class ClientHandler implements Runnable {
     private BufferedReader in;
     private String playerId;
     private String playerName;
+    private GameRoom currentRoom; // 현재 입장한 방 참조
 
     public ClientHandler(Socket socket, GameServer server) {
         this.clientSocket = socket;
@@ -36,11 +38,29 @@ public class ClientHandler implements Runnable {
         } catch (Exception e) {
             System.out.println("클라이언트 연결 해제: " + (playerName != null ? playerName : "미로그인 사용자"));
         } finally {
-            // 연결 종료 시 처리
+            // ⭐ 1. 방에 들어가 있었다면 방에서 제거
+            try {
+                if (currentRoom != null && playerId != null) {
+                    GameRoom roomToLeave = this.currentRoom;
+                    this.currentRoom = null;
+
+                    roomToLeave.removePlayer(this.playerId);
+                    // 다른 클라이언트들에게도 방 정보 갱신
+                    server.broadcastRoomUpdate(roomToLeave);
+                }
+            } catch (Exception ignore) {
+                // 로그만 남겨도 됨
+                // System.out.println("연결 종료 중 방 정리 오류: " + ignore.getMessage());
+            }
+
+            // ⭐ 2. 클라이언트 목록에서 제거 (기존 코드)
             server.removeClient(this);
+
+            // ⭐ 3. 소켓 닫기 (기존 코드)
             try { clientSocket.close(); } catch (Exception ignored) {}
         }
     }
+
 
     /**
      * 클라이언트 메시지를 파싱하고 처리합니다.
@@ -61,6 +81,21 @@ public class ClientHandler implements Runnable {
                 break;
             case Protocol.ROOM_CREATE_REQ: // 방 생성 요청 처리 (추가)
                 handleRoomCreateRequest(dataPart);
+                break;
+            case Protocol.ROOM_JOIN_REQ: // 방 입장 요청 처리 (추가)
+                handleRoomJoinRequest(dataPart);
+                break;
+            case Protocol.GAME_READY: // 게임 준비/해제 처리 (추가)
+                handleGameReadyRequest(dataPart);
+                break;
+            case Protocol.ROOM_LEAVE_REQ: // 방 나가기 요청 처리 (추가)
+                handleRoomLeaveRequest();
+                break;
+            case Protocol.WORD_INPUT: // 단어 입력 요청 처리 (추가)
+                handleWordInputRequest(dataPart);
+                break;
+            case Protocol.GAME_START_REQ:
+                handleGameStartRequest(dataPart);
                 break;
         }
     }
@@ -164,7 +199,220 @@ public class ClientHandler implements Runnable {
         out.println(message);
     }
 
+    // --- 방 입장/퇴장 핸들러 ---
+
+    /**
+     * ROOM_JOIN_REQ 처리: 방에 입장시키고 ROOM_JOIN_RES 전송 후 ROOM_UPDATE 브로드캐스트
+     */
+//    private void handleRoomJoinRequest(String dataPart) {
+//        String roomId = getAttributeValue(dataPart, "roomId");
+//        int teamNumber = Integer.parseInt(getAttributeValue(dataPart, "team"));
+//
+//        GameRoom room = server.getRoom(roomId);
+//        Map<String, String> responseData = new HashMap<>();
+//
+//        if (room == null) {
+//            responseData.put("status", "FAIL");
+//            responseData.put("message", "E007: 존재하지 않는 방입니다.");
+//            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
+//            return;
+//        }
+//
+//        // 이미 그 방에 내가 들어가 있는 경우 → 그냥 성공 응답만 다시 보내고 끝
+//        if (room.hasPlayer(this.playerId)) {
+//            this.currentRoom = room; // 혹시나 null이면 다시 세팅
+//
+//            Player me = room.getPlayers().get(this.playerId);
+//            int myTeam = (me != null) ? me.getTeamNumber() : teamNumber;
+//
+//            responseData.put("status", "SUCCESS");
+//            responseData.put("team", String.valueOf(myTeam));
+//            responseData.put("players", room.getPlayersProtocolString());
+//            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
+//            // 이미 방 상태는 최신이라면 broadcast는 생략 가능하지만, 필요하면 유지
+//            // server.broadcastRoomUpdate(room);
+//            return;
+//        }
+//
+//        // 새로 입장하는 경우만 인원 수 체크
+//        if (room.getCurrentPlayers() >= room.getMaxPlayers()) {
+//            responseData.put("status", "FAIL");
+//            responseData.put("message", "E003: 방이 가득 찼습니다.");
+//            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
+//            return;
+//        }
+//
+//        // 진짜로 새로 추가
+//        Player player = new Player(this.playerId, this.playerName);
+//        if (room.addPlayer(player, teamNumber)) {
+//            this.currentRoom = room;
+//
+//            responseData.put("status", "SUCCESS");
+//            responseData.put("team", String.valueOf(teamNumber));
+//            responseData.put("players", room.getPlayersProtocolString());
+//            responseData.put("roomCreatorId", room.getRoomCreatorId());
+//            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
+//            server.broadcastRoomUpdate(room);
+//        } else {
+//            responseData.put("status", "FAIL");
+//            responseData.put("message", "알 수 없는 오류로 입장에 실패했습니다.");
+//            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
+//        }
+//    }
+
+    private void handleRoomJoinRequest(String dataPart) {
+        String roomId = getAttributeValue(dataPart, "roomId");
+        String teamStr = getAttributeValue(dataPart, "team");
+        int requestedTeam = 0;
+        try {
+            requestedTeam = Integer.parseInt(teamStr);
+        } catch (NumberFormatException ignored) {}
+
+        GameRoom room = server.getRoom(roomId);
+        Map<String, String> responseData = new HashMap<>();
+
+        if (room == null) {
+            responseData.put("status", "FAIL");
+            responseData.put("message", "E007: 존재하지 않는 방입니다.");
+            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
+            return;
+        }
+
+        // 이미 그 방에 내가 들어가 있는 경우  → "팀 변경" 요청으로 처리
+        if (room.hasPlayer(this.playerId)) {
+            this.currentRoom = room;
+
+            Player me = room.getPlayers().get(this.playerId);
+            if (me != null && (requestedTeam == 1 || requestedTeam == 2)) {
+                me.setTeamNumber(requestedTeam);   // ★ 팀 변경
+            }
+
+            responseData.put("status", "SUCCESS");
+            responseData.put("team", String.valueOf(me.getTeamNumber()));
+            responseData.put("players", room.getPlayersProtocolString());
+            responseData.put("roomCreatorId", room.getRoomCreatorId());
+            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
+
+            // 방/로비에 갱신 브로드캐스트
+            server.broadcastRoomUpdate(room);
+            return;
+        }
+
+        // 여기부터는 "새로 들어오는 경우"만
+        if (room.getCurrentPlayers() >= room.getMaxPlayers()) {
+            responseData.put("status", "FAIL");
+            responseData.put("message", "E003: 방이 가득 찼습니다.");
+            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
+            return;
+        }
+
+        // ★★★ 모드(2인/4인)에 따라 자동 팀 배정 ★★★
+        int teamNumber;
+        int maxPlayers = room.getMaxPlayers();
+
+        if (maxPlayers == 2) {
+            // 2인용: 1명 들어와 있으면 무조건 다른 팀으로
+            teamNumber = (room.getCurrentPlayers() == 0) ? 1 : 2;
+        } else {
+            // 4인용(팀전): 인원 수를 보고 균형 맞추기
+            int team1Count = 0;
+            int team2Count = 0;
+            for (Player p : room.getPlayers().values()) {
+                if (p.getTeamNumber() == 1) team1Count++;
+                else if (p.getTeamNumber() == 2) team2Count++;
+            }
+            // 더 적은 쪽에 넣기 (2 vs 2로 맞추는 방향)
+            teamNumber = (team1Count <= team2Count) ? 1 : 2;
+        }
+
+        Player player = new Player(this.playerId, this.playerName);
+        if (room.addPlayer(player, teamNumber)) {
+            this.currentRoom = room;
+
+            responseData.put("status", "SUCCESS");
+            responseData.put("team", String.valueOf(teamNumber));
+            responseData.put("players", room.getPlayersProtocolString());
+            responseData.put("roomCreatorId", room.getRoomCreatorId());
+            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
+
+            server.broadcastRoomUpdate(room);
+        } else {
+            responseData.put("status", "FAIL");
+            responseData.put("message", "알 수 없는 오류로 입장에 실패했습니다.");
+            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
+        }
+    }
+
+
+    /**
+     * GAME_READY 요청 처리: 준비 상태 변경 후 ROOM_UPDATE 브로드캐스트
+     */
+    private void handleGameReadyRequest(String dataPart) {
+        if (currentRoom == null) return;
+
+        boolean isReady = Boolean.parseBoolean(getAttributeValue(dataPart, "ready"));
+        currentRoom.setPlayerReady(this.playerId, isReady);
+
+        // 준비 상태 UI 갱신만 브로드캐스트
+        server.broadcastRoomUpdate(currentRoom);
+    }
+
+
+    /**
+     * ROOM_LEAVE_REQ 처리: 방에서 퇴장 후 ROOM_UPDATE 브로드캐스트
+     */
+    private void handleRoomLeaveRequest() {
+        if (currentRoom == null) return;
+
+        GameRoom roomToLeave = this.currentRoom;
+        this.currentRoom = null;
+
+        roomToLeave.removePlayer(this.playerId);
+
+        // 클라이언트에게 ROOM_LEAVE_RES (별도 정의 필요) 대신,
+        // 클라이언트에서 UI를 로비로 전환하고 ROOM_UPDATE를 브로드캐스트
+        server.broadcastRoomUpdate(roomToLeave);
+    }
+
+    /**
+     * WORD_INPUT 요청 처리: GameServer로 단어 입력 전달
+     */
+    private void handleWordInputRequest(String dataPart) {
+        if (currentRoom == null) return;
+
+        String wordContent = getAttributeValue(dataPart, "word");
+
+        // GameServer를 통해 GameLogic으로 전달
+        server.handleWordInput(currentRoom.getRoomId(), this.playerId, wordContent);
+    }
+
+    /**
+     * GAME_START_REQ 처리: 방장 + 모두 준비 상태일 때만 게임 시작
+     */
+    private void handleGameStartRequest(String dataPart) {
+        if (currentRoom == null) return;
+
+        // 반드시 방장만 시작할 수 있게 체크
+        if (!playerId.equals(currentRoom.getRoomCreatorId())) {
+            // 방장이 아닌데 시작 요청하면 무시
+            return;
+        }
+
+        // 모두 ready인지 확인 (한 명이라도 notready면 시작 안 함)
+        if (!currentRoom.isAllReady()) {
+            // 아직 준비 안 된 사람이 있으면 시작 안 함
+            return;
+        }
+
+        // 여기서만 진짜 게임 시작
+        server.startGame(currentRoom);
+    }
+
+
     // Getter 메소드
     public String getPlayerId() { return playerId; }
     public String getPlayerName() { return playerName; }
+    public GameRoom getCurrentRoom() { return currentRoom; }
+
+
 }
