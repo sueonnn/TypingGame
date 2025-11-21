@@ -12,7 +12,11 @@ import javax.swing.SwingUtilities;
 
 import client.ui.CreateRoomDialog;
 import client.ui.MainFrame;
-import client.ui.LobbyPanel; // LobbyPanel 임포트
+import client.ui.LobbyPanel;
+import client.ui.RoomPanel;
+import client.ui.GamePanel;
+import client.ui.WaitingPanel;
+import client.ui.GameEndPanel;
 import common.Protocol;
 
 public class ServerConnection {
@@ -116,9 +120,13 @@ public class ServerConnection {
     /**
      * 서버 메시지를 처리하여 UI를 업데이트하는 로직
      */
+    /**
+     * 서버 메시지를 처리하여 UI를 업데이트하는 로직
+     */
     private void handleServerMessage(String rawMessage) {
         String[] parts = rawMessage.split("\\" + Protocol.DELIMITER, 3);
         if (parts.length < 3) return;
+
         String type = parts[0];
         String dataPart = parts[2];
 
@@ -126,7 +134,7 @@ public class ServerConnection {
         if (type.equals(Protocol.LOGIN_RES)) {
             if (dataPart.contains("status" + Protocol.FIELD_SEPARATOR + "SUCCESS")) {
                 String playerName = getAttributeValue(dataPart, "playerName");
-                String playerId = getAttributeValue(dataPart, "playerId"); // ID 추출
+                String playerId   = getAttributeValue(dataPart, "playerId");
                 mainFrame.handleLoginSuccess(playerName, playerId);
             } else {
                 String message = getAttributeValue(dataPart, "message");
@@ -137,33 +145,158 @@ public class ServerConnection {
 
         // 2. ROOM_LIST_RES 처리
         if (type.equals(Protocol.ROOM_LIST_RES)) {
-            // 로비 패널이 현재 화면에 있는지 확인하고 업데이트 요청
-            if (mainFrame.getCurrentPanel() instanceof LobbyPanel) {
-                LobbyPanel lobby = (LobbyPanel) mainFrame.getCurrentPanel();
-                // Swing 스레드에서 UI 업데이트 요청
-                SwingUtilities.invokeLater(() -> lobby.updateRoomList(dataPart));
+            if (mainFrame.getCurrentPanel() instanceof LobbyPanel lobbyPanel) {
+                SwingUtilities.invokeLater(() -> lobbyPanel.updateRoomList(dataPart));
             }
             return;
         }
-        // 3. ROOM_CREATE_RES 처리 (추가)
-        if (type.equals(Protocol.ROOM_CREATE_RES)) {
-            String status = getAttributeValue(dataPart, "status");
-            boolean success = status.equals("SUCCESS");
-            String message = success ? getAttributeValue(dataPart, "roomId") : getAttributeValue(dataPart, "message");
 
-            // 현재 열려 있는 CreateRoomDialog를 찾아 응답 처리 (단순화된 접근)
-            Window[] windows = Window.getWindows();
-            for (Window window : windows) {
-                if (window instanceof CreateRoomDialog && window.isShowing()) {
-                    ((CreateRoomDialog) window).handleCreationResponse(success, message);
+        // 3. ROOM_CREATE_RES 처리
+        if (type.equals(Protocol.ROOM_CREATE_RES)) {
+            String status  = getAttributeValue(dataPart, "status");
+            boolean success = status.equals("SUCCESS");
+            String message = success
+                    ? getAttributeValue(dataPart, "roomId")
+                    : getAttributeValue(dataPart, "message");
+
+            // 열려 있는 CreateRoomDialog 찾아서 응답 전달
+            for (Window window : Window.getWindows()) {
+                if (window instanceof CreateRoomDialog dialog && window.isShowing()) {
+                    dialog.handleCreationResponse(success, message);
                     break;
                 }
             }
             return;
         }
 
-        // TODO: 다른 메시지 타입 (ROOM_JOIN_RES, GAME_START 등) 처리 로직 추가
+        // 4. ROOM_JOIN_RES 처리 (성공/실패 안내만)
+        if (type.equals(Protocol.ROOM_JOIN_RES)) {
+            String status = getAttributeValue(dataPart, "status");
+            if (status.equals("SUCCESS")) {
+                SwingUtilities.invokeLater(() ->
+                        JOptionPane.showMessageDialog(
+                                mainFrame,
+                                "방 입장 성공! ROOM_UPDATE를 기다립니다.",
+                                "알림",
+                                JOptionPane.INFORMATION_MESSAGE
+                        )
+                );
+            } else {
+                String message = getAttributeValue(dataPart, "message");
+                SwingUtilities.invokeLater(() ->
+                        JOptionPane.showMessageDialog(
+                                mainFrame,
+                                "방 입장 실패: " + message,
+                                "오류",
+                                JOptionPane.ERROR_MESSAGE
+                        )
+                );
+            }
+            return;
+        }
+
+        // 5. ROOM_UPDATE 처리 (방 상태 동기화)
+        if (type.equals(Protocol.ROOM_UPDATE)) {
+            String playersString = getAttributeValue(dataPart, "players");
+            String roomId        = getAttributeValue(dataPart, "roomId");
+            String roomName      = getAttributeValue(dataPart, "roomName");
+            String roomCreatorId = getAttributeValue(dataPart, "roomCreatorId");
+
+            SwingUtilities.invokeLater(() -> {
+                if (mainFrame.getCurrentPanel() instanceof LobbyPanel) {
+                    // 로비에서 받으면 RoomPanel로 전환
+                    mainFrame.switchToRoom(roomId, roomName, playersString, roomCreatorId);
+                } else if (mainFrame.getCurrentPanel() instanceof RoomPanel roomPanel) {
+                    // 방 화면에서는 목록만 갱신
+                    roomPanel.updateRoomState(roomId, roomName, playersString, roomCreatorId);
+                }
+            });
+            return;
+        }
+
+        // 6. GAME_START 처리 (초기 보드 + 제한 시간 → WaitingPanel로)
+        if (type.equals(Protocol.GAME_START)) {
+            // 서버는 board:..., timeLimit:... 을 보냄
+            String boardString = getAttributeValue(dataPart, "board");
+            try {
+                int timeLimit = Integer.parseInt(getAttributeValue(dataPart, "timeLimit"));
+                // 3초 카운트다운용 WaitingPanel로 먼저 전환
+                SwingUtilities.invokeLater(() -> mainFrame.switchToWaiting(boardString, timeLimit));
+            } catch (NumberFormatException ignored) {}
+            return;
+        }
+
+
+        // 7. WORD_CAPTURE 처리 (특정 인덱스 단어를 누가 뺏었는지)
+//        if (type.equals(Protocol.WORD_CAPTURE)) {
+//            if (mainFrame.getCurrentPanel() instanceof GamePanel gamePanel) {
+//                try {
+//                    int index      = Integer.parseInt(getAttributeValue(dataPart, "wordIndex"));
+//                    int team       = Integer.parseInt(getAttributeValue(dataPart, "team"));
+//                    String capturedBy = getAttributeValue(dataPart, "capturedBy");
+//                    int points     = Integer.parseInt(getAttributeValue(dataPart, "points"));
+//
+//                    SwingUtilities.invokeLater(() ->
+//                            gamePanel.updateWordCapture(index, team, capturedBy, points)
+//                    );
+//                } catch (NumberFormatException ignored) {}
+//            }
+//            return;
+//        }
+
+        // 8. GAME_UPDATE 처리 (보드/점수/남은시간 동기화)
+        if (type.equals(Protocol.GAME_UPDATE)) {
+            if (mainFrame.getCurrentPanel() instanceof GamePanel gamePanel) {
+                try {
+                    String boardString = getAttributeValue(dataPart, "board");
+                    int score1   = Integer.parseInt(getAttributeValue(dataPart, "score1"));
+                    int score2   = Integer.parseInt(getAttributeValue(dataPart, "score2"));
+                    int timeLeft = Integer.parseInt(getAttributeValue(dataPart, "timeLeft"));
+
+                    SwingUtilities.invokeLater(() ->
+                            gamePanel.updateGameState(boardString, score1, score2, timeLeft)
+                    );
+                } catch (NumberFormatException ignored) {}
+            }
+            return;
+        }
+
+
+
+        // 9. GAME_END 처리 (게임 종료 → GameEndPanel)
+        if (type.equals(Protocol.GAME_END)) {
+            try {
+                String winner = getAttributeValue(dataPart, "winner");      // "1", "2", "DRAW"
+
+                int score1 = Integer.parseInt(getAttributeValue(dataPart, "score1"));
+                int score2 = Integer.parseInt(getAttributeValue(dataPart, "score2"));
+                String mvp = getAttributeValue(dataPart, "mvp");
+
+                SwingUtilities.invokeLater(() ->
+                        mainFrame.switchToGameEnd(winner, score1, score2, mvp)
+                );
+            } catch (NumberFormatException ignored) {}
+            return;
+        }
+
+        // 10. ERROR 처리
+        if (type.equals(Protocol.ERROR)) {
+            String code    = getAttributeValue(dataPart, "code");
+            String message = getAttributeValue(dataPart, "message");
+            SwingUtilities.invokeLater(() ->
+                    JOptionPane.showMessageDialog(
+                            mainFrame,
+                            "오류 [" + code + "]: " + message,
+                            "게임 오류",
+                            JOptionPane.ERROR_MESSAGE
+                    )
+            );
+            return;
+        }
+
+        // 그 외 타입은 일단 무시
     }
+
 
     /**
      * 데이터 문자열에서 특정 속성 값 추출 (단순 파싱)
