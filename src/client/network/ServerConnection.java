@@ -17,6 +17,7 @@ import client.ui.RoomPanel;
 import client.ui.GamePanel;
 import client.ui.WaitingPanel;
 import client.ui.GameEndPanel;
+import client.ui.MessageDialog;
 import common.Protocol;
 
 public class ServerConnection {
@@ -46,9 +47,16 @@ public class ServerConnection {
             new Thread(this::listenToServer).start();
             return true;
         } catch (Exception e) {
+        	MessageDialog.showError(
+        	        mainFrame,
+        	        "연결 오류",
+        	        "서버 연결 실패.\nIP: " + serverIp + ", Port: " + SERVER_PORT
+        	);
+        	/*
             JOptionPane.showMessageDialog(mainFrame,
                     "서버 연결 실패. IP: " + serverIp + ", Port: " + SERVER_PORT,
                     "연결 오류", JOptionPane.ERROR_MESSAGE);
+            */
             isConnected = false;
             return false;
         }
@@ -169,26 +177,24 @@ public class ServerConnection {
             return;
         }
 
-        // 4. ROOM_JOIN_RES 처리 (성공/실패 안내만)
+     // 4. ROOM_JOIN_RES 처리 (성공/실패 안내만)
         if (type.equals(Protocol.ROOM_JOIN_RES)) {
             String status = getAttributeValue(dataPart, "status");
             if (status.equals("SUCCESS")) {
                 SwingUtilities.invokeLater(() ->
-                        JOptionPane.showMessageDialog(
+                        MessageDialog.showInfo(
                                 mainFrame,
-                                "방 입장 성공! ROOM_UPDATE를 기다립니다.",
                                 "알림",
-                                JOptionPane.INFORMATION_MESSAGE
+                                "방 입장 성공!"
                         )
                 );
             } else {
                 String message = getAttributeValue(dataPart, "message");
                 SwingUtilities.invokeLater(() ->
-                        JOptionPane.showMessageDialog(
+                        MessageDialog.showError(
                                 mainFrame,
-                                "방 입장 실패: " + message,
                                 "오류",
-                                JOptionPane.ERROR_MESSAGE
+                                "방 입장 실패: " + message
                         )
                 );
             }

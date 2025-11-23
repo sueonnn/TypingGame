@@ -1,107 +1,257 @@
 package client.ui;
 
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import java.awt.*;
-import java.util.HashMap;
-import java.util.Map;
-
 import client.network.ServerConnection;
 import common.Protocol;
 
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.SwingUtilities;
+import java.awt.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 public class RoomPanel extends JPanel {
+
     private final MainFrame mainFrame;
     private final ServerConnection connection;
     private final String myPlayerId;
 
-    // A. 방 정보
-    private JLabel roomInfoLabel;
-
-    // B. 플레이어 목록
-    private JList<String> playerList;
-    private DefaultListModel<String> playerListModel;
-
-    // C. 팀 선택
-    private JButton team1Button;
-    private JButton team2Button;
-
-    // D. 준비/시작 버튼
-    private JButton readyButton;
-
-    // E. 채팅창
-    private JTextArea chatArea;
-
-    // 상태 변수
+    // ===== 상태 =====
     private String currentRoomId;
     private String currentRoomName;
-    private boolean isReady = false;
-    private boolean isRoomCreator = false;
     private String roomCreatorId;
+    private boolean isReady = false;       // 나의 준비 상태
+    private boolean isRoomCreator = false; // 내가 방장인지 여부
+
+    // ===== 상단 바 =====
+    private JLabel titleLabel;
+
+    // ===== 캐릭터 슬롯 (4칸) =====
+    private JLabel[] avatarLabels = new JLabel[4];
+    private JLabel[] nameLabels   = new JLabel[4];
+    private JLabel[] teamLabels   = new JLabel[4];
+    private JLabel[] readyLabels  = new JLabel[4];
+
+    // ===== 버튼 =====
+    private RoundButton team1Button;
+    private RoundButton team2Button;
+    private RoundButton readyButton;
+    private RoundButton exitButton;
+
+    // ===== 채팅 =====
+    private JTextArea chatArea;
+    private JTextField chatInputField;
 
     public RoomPanel(MainFrame mainFrame, ServerConnection connection, String myPlayerId) {
         this.mainFrame = mainFrame;
         this.connection = connection;
         this.myPlayerId = myPlayerId;
 
-        setLayout(new BorderLayout(15, 15));
-        setBorder(new EmptyBorder(15, 15, 15, 15));
+        setLayout(new BorderLayout());
+        setBorder(new EmptyBorder(0, 0, 0, 0));
 
-        // 1. 북쪽: 방 정보 (A)
-        roomInfoLabel = new JLabel("방 정보 로딩 중...", SwingConstants.CENTER);
-        roomInfoLabel.setFont(new Font("맑은 고딕", Font.BOLD, 20));
-        add(roomInfoLabel, BorderLayout.NORTH);
+        // ==== 1. 배경 패널 (칠판 전체) ====
+        Image bgImage = new ImageIcon(
+                getClass().getResource("/tg_start1.png")
+        ).getImage();
 
-        // 2. 중앙: 플레이어 목록 및 채팅 (B, E)
-        JPanel centerPanel = new JPanel(new GridLayout(1, 2, 10, 10));
+        BackgroundPanel root = new BackgroundPanel(bgImage);
+        root.setLayout(new BorderLayout());
+        add(root, BorderLayout.CENTER);
 
-        // B. 플레이어 목록
-        playerListModel = new DefaultListModel<>();
-        playerList = new JList<>(playerListModel);
-        playerList.setBorder(BorderFactory.createTitledBorder("플레이어 목록 (닉네임 | 팀 | 상태)"));
-        centerPanel.add(new JScrollPane(playerList));
+        // ==== 2. 상단 정보 바 (LobbyPanel과 동일한 느낌) ====
+        JPanel topBar = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
 
-        // E. 채팅창 (임시)
-        chatArea = new JTextArea(10, 20);
-        chatArea.setEditable(false);
-        JScrollPane chatScrollPane = new JScrollPane(chatArea);
-        chatScrollPane.setBorder(BorderFactory.createTitledBorder("채팅"));
-        centerPanel.add(chatScrollPane);
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
 
-        add(centerPanel, BorderLayout.CENTER);
+                int w = getWidth();
+                int h = getHeight();
 
-        // 3. 남쪽: 제어판 (C, D, F)
-        JPanel controlPanel = new JPanel(new BorderLayout());
+                g2.setColor(new Color(255, 255, 255, 230));
+                g2.fillRoundRect(10, 5, w - 20, h - 10, 30, 30);
 
-        // C. 팀 선택 영역
-        JPanel teamPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        team1Button = new JButton("팀 1 선택");
-        team2Button = new JButton("팀 2 선택");
-        teamPanel.setBorder(BorderFactory.createTitledBorder("팀 선택"));
-        teamPanel.add(team1Button);
-        teamPanel.add(team2Button);
+                g2.dispose();
+            }
+        };
+        topBar.setOpaque(false);
+        topBar.setLayout(new BorderLayout());
+        topBar.setBorder(BorderFactory.createEmptyBorder(10, 80, 10, 80));
 
-        // D, F. 준비/시작 및 나가기 버튼
-        JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        readyButton = new JButton("준비 완료");
-        JButton leaveButton = new JButton("방 나가기");
+        titleLabel = new JLabel("방 제목 - 참여 인원 : 0명", SwingConstants.CENTER);
+        titleLabel.setFont(UITheme.SUBTITLE_FONT);
+        titleLabel.setForeground(Color.DARK_GRAY);
 
-        // 액션 리스너 등록
-        readyButton.addActionListener(e -> toggleReadyOrStart());
-        leaveButton.addActionListener(e -> requestLeaveRoom());
+        topBar.add(titleLabel, BorderLayout.CENTER);
+        root.add(topBar, BorderLayout.NORTH);
+
+        // ==== 3. 칠판 영역 (캐릭터 + 버튼 + 채팅) ====
+        JPanel boardLayer = new JPanel(null); // 절대 좌표 배치
+        boardLayer.setOpaque(false);
+        root.add(boardLayer, BorderLayout.CENTER);
+
+        // ===== 3-1. 캐릭터 4칸 =====
+        // 1600x900 기준, 칠판 안에서 좌우 균형 맞추기
+        int[] slotX = {200, 400, 600, 800};
+        int slotY = 200;
+        int charW = 200;
+        int charH = 230;
+
+        String[] boogiePaths = {
+                "/boogie01.png",
+                "/boogie02.png",
+                "/boogie03.png",
+                "/boogie04.png"
+        };
+
+        for (int i = 0; i < 4; i++) {
+            // 캐릭터 이미지
+            ImageIcon icon = null;
+            java.net.URL imgUrl = getClass().getResource(boogiePaths[i]);
+            if (imgUrl != null) {
+                Image img = new ImageIcon(imgUrl).getImage()
+                        .getScaledInstance(charW, charH, Image.SCALE_SMOOTH);
+                icon = new ImageIcon(img);
+            }
+
+            JLabel avatar = new JLabel(icon);
+            avatar.setBounds(slotX[i], slotY, charW, charH);
+            avatar.setHorizontalAlignment(SwingConstants.CENTER);
+            avatarLabels[i] = avatar;
+            boardLayer.add(avatar);
+
+            // 닉네임
+            JLabel name = new JLabel("미참가", SwingConstants.CENTER);
+            name.setFont(UITheme.NORMAL_FONT.deriveFont(20f));
+            name.setForeground(Color.WHITE);
+            name.setBounds(slotX[i], slotY + 240, charW, 30);
+            nameLabels[i] = name;
+            boardLayer.add(name);
+
+            // 팀 정보
+            JLabel team = new JLabel(" ", SwingConstants.CENTER);
+            team.setFont(UITheme.NORMAL_FONT.deriveFont(16f));
+            team.setForeground(Color.WHITE);
+            team.setBounds(slotX[i], slotY + 270, charW, 25);
+            teamLabels[i] = team;
+            boardLayer.add(team);
+
+            // 준비 상태
+            JLabel ready = new JLabel(" ", SwingConstants.CENTER);
+            ready.setFont(UITheme.NORMAL_FONT.deriveFont(16f));
+            ready.setForeground(Color.WHITE);
+            ready.setBounds(slotX[i], slotY + 300, charW, 25);
+            readyLabels[i] = ready;
+            boardLayer.add(ready);
+        }
+
+        // ===== 3-2. 버튼 4개 (하단 중앙) =====
+        int buttonY = 570;
+
+        team1Button = new RoundButton("1팀 참가");
+        team1Button.setFont(UITheme.BUTTON_FONT);
+        team1Button.setBounds(200, 590, 120, 40);
+        boardLayer.add(team1Button);
+
+        team2Button = new RoundButton("2팀 참가");
+        team2Button.setFont(UITheme.BUTTON_FONT);
+        team2Button.setBounds(330, 590, 120, 40);
+        boardLayer.add(team2Button);
+
+        readyButton = new RoundButton("준비 완료");
+        readyButton.setFont(UITheme.BUTTON_FONT);
+        readyButton.setBounds(610, buttonY, 200, 60);
+        boardLayer.add(readyButton);
+
+        exitButton = new RoundButton("방 나가기");
+        exitButton.setFont(UITheme.BUTTON_FONT);
+        exitButton.setBounds(820, buttonY, 200, 60);
+        boardLayer.add(exitButton);
+
+        // 버튼 리스너
         team1Button.addActionListener(e -> requestTeamChange(1));
         team2Button.addActionListener(e -> requestTeamChange(2));
+        readyButton.addActionListener(e -> toggleReadyOrStart());
+        exitButton.addActionListener(e -> requestLeaveRoom());
 
-        actionPanel.add(readyButton);
-        actionPanel.add(leaveButton);
+        // ===== 3-3. 채팅 영역 (오른쪽 칠판 안쪽) =====
+        JPanel chatPanel = new JPanel(null) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
 
-        controlPanel.add(teamPanel, BorderLayout.WEST);
-        controlPanel.add(actionPanel, BorderLayout.EAST);
+                int w = getWidth();
+                int h = getHeight();
+                int arc = 40;
 
-        add(controlPanel, BorderLayout.SOUTH);
+                // 흰색 채팅 배경
+                g2.setColor(Color.WHITE);
+                g2.fillRoundRect(0, 0, w - 1, h - 1, arc, arc);
+
+                // 진한 테두리
+                g2.setColor(new Color(10, 80, 90));
+                g2.setStroke(new BasicStroke(3f));
+                g2.drawRoundRect(1, 1, w - 3, h - 3, arc, arc);
+
+                g2.dispose();
+            }
+        };
+        chatPanel.setOpaque(false);
+
+        // 채팅창 (칠판 오른쪽)
+        int chatX = 1030;
+        int chatY = 50;
+        int chatW = 370;
+        int chatH = 585;
+
+        chatPanel.setBounds(chatX, chatY, chatW, chatH);
+        boardLayer.add(chatPanel);
+
+        chatArea = new JTextArea();
+        chatArea.setEditable(false);
+        chatArea.setLineWrap(true);
+        
+        chatArea.setWrapStyleWord(true);
+        chatArea.setFont(UITheme.NORMAL_FONT.deriveFont(16f));
+        chatArea.setForeground(Color.DARK_GRAY);
+
+        JScrollPane chatScroll = new JScrollPane(chatArea);
+        chatScroll.setBorder(BorderFactory.createEmptyBorder());
+        chatScroll.setOpaque(false);
+        chatScroll.getViewport().setOpaque(false);
+
+        // 내부 여백 감안해서 위치 조정
+        chatScroll.setBounds(25, 25, chatW - 50, chatH - 130);
+        chatPanel.add(chatScroll);
+
+        chatInputField = new JTextField("메시지를 입력하세요");
+        chatInputField.setFont(UITheme.NORMAL_FONT.deriveFont(16f));
+        chatInputField.setBorder(
+                BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(new Color(10, 80, 90), 2, true),
+                        BorderFactory.createEmptyBorder(5, 10, 5, 10)
+                )
+        );
+        //chatInputField.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+        chatInputField.setBounds(25, chatH - 70, chatW - 50, 45);
+        chatPanel.add(chatInputField);
+
+        // 아직 채팅 프로토콜은 없으니, UI만 준비해두고 액션은 나중에 추가 가능
     }
 
+    // ================== 초기화 / 업데이트 ==================
+
     /**
-     * 서버로부터 받은 방 입장 성공 정보로 UI를 초기화합니다.
+     * 방 입장 직후 최초 1번 호출되는 초기화 메소드
      */
     public void initializeRoom(String roomId, String roomName, String playersString, String roomCreatorId) {
         this.currentRoomId = roomId;
@@ -111,7 +261,7 @@ public class RoomPanel extends JPanel {
     }
 
     /**
-     * ROOM_UPDATE 메시지를 받아 플레이어 목록을 갱신합니다.
+     * ROOM_UPDATE 수신 시마다 호출되어 방 상태를 갱신
      */
     public void updateRoomState(String roomId, String roomName, String playersString, String roomCreatorId) {
         if (!roomId.equals(this.currentRoomId)) return;
@@ -120,122 +270,178 @@ public class RoomPanel extends JPanel {
         updatePlayerList(playersString, roomName, false);
     }
 
+    private static class PlayerSlotInfo {
+        String id;
+        String name;
+        int team;
+        String status; // ready / notready
+        boolean isCreator;
+    }
+
+    /**
+     * playersString을 파싱해서 상단 제목 + 4개 캐릭터 슬롯을 갱신
+     */
     private void updatePlayerList(String playersString, String roomName, boolean isInitialLoad) {
-        playerListModel.clear();
-        isRoomCreator = false;
-        int readyCount = 0;
+        // 기본값으로 초기화
+        for (int i = 0; i < 4; i++) {
+            nameLabels[i].setText("미참가");
+            teamLabels[i].setText(" ");
+            readyLabels[i].setText(" ");
+        }
+
+        List<PlayerSlotInfo> team1 = new ArrayList<>();
+        List<PlayerSlotInfo> team2 = new ArrayList<>();
+
         int totalPlayers = 0;
+        int readyCount = 0;
 
         String[] playerEntries = playersString.split(Protocol.DATA_SEPARATOR);
-
         for (String entry : playerEntries) {
             String[] details = entry.split(Protocol.FIELD_SEPARATOR);
             if (details.length < 4) continue;
 
-            String id = details[0];
-            String name = details[1];
-            String team = details[2];
-            String status = details[3];
-            totalPlayers++;
+            PlayerSlotInfo info = new PlayerSlotInfo();
+            info.id = details[0];
+            info.name = details[1];
 
-            if (status.equals("ready")) {
+            try {
+                info.team = Integer.parseInt(details[2]);
+            } catch (NumberFormatException e) {
+                info.team = 0;
+            }
+
+            info.status = details[3];
+            info.isCreator = info.id.equals(roomCreatorId);
+
+            totalPlayers++;
+            if ("ready".equalsIgnoreCase(info.status)) {
                 readyCount++;
             }
 
-            // 내 상태 업데이트
-            if (id.equals(myPlayerId)) {
-                isReady = status.equals("ready");
-                isRoomCreator = id.equals(roomCreatorId);
+            // 내 상태 갱신
+            if (info.id.equals(myPlayerId)) {
+                isReady = "ready".equalsIgnoreCase(info.status);
+                isRoomCreator = info.isCreator;
             }
 
-            String display = String.format("%s [팀 %s] (%s)", name, team, status.toUpperCase());
-            if (id.equals(roomCreatorId)) {
-                display += " ⭐(방장)";
-            }
-            playerListModel.addElement(display);
+            if (info.team == 1) team1.add(info);
+            else if (info.team == 2) team2.add(info);
         }
 
-        roomInfoLabel.setText(roomName + " - " + totalPlayers + "명 / " + "최대 인원");
+        // 상단 바 텍스트 갱신
+        titleLabel.setText(roomName + " - 참여 인원 : " + totalPlayers + "명");
 
-        updateReadyButtonState(readyCount == totalPlayers);
+        // 팀1은 왼쪽 2칸, 팀2는 오른쪽 2칸
+        int idx = 0;
+        for (PlayerSlotInfo p : team1) {
+            if (idx >= 2) break;
+            applyPlayerToSlot(idx, p);
+            idx++;
+        }
+
+        idx = 2;
+        for (PlayerSlotInfo p : team2) {
+            if (idx >= 4) break;
+            applyPlayerToSlot(idx, p);
+            idx++;
+        }
+
+        boolean allReady = (totalPlayers > 0 && readyCount == totalPlayers);
+        updateReadyButtonState(allReady);
     }
 
+    private void applyPlayerToSlot(int slotIndex, PlayerSlotInfo info) {
+        String nameText = info.name;
+        if (info.isCreator) {
+            nameText += " (방장)";
+        }
+        nameLabels[slotIndex].setText(nameText);
+
+        if (info.team == 1) {
+            teamLabels[slotIndex].setText("1팀");
+        } else if (info.team == 2) {
+            teamLabels[slotIndex].setText("2팀");
+        } else {
+            teamLabels[slotIndex].setText("팀 미지정");
+        }
+
+        if ("ready".equalsIgnoreCase(info.status)) {
+            readyLabels[slotIndex].setText("준비 완료");
+        } else {
+            readyLabels[slotIndex].setText("준비 안함");
+        }
+    }
+
+    // ================== 버튼 상태 / 동작 ==================
 
     private void updateReadyButtonState(boolean allReady) {
         if (isRoomCreator) {
-            // 방장일 때
             if (allReady) {
-                // 모두 준비 완료 → 게임 시작 가능
                 readyButton.setText("게임 시작");
             } else {
-                // 아직 다 안 됐어도 방장은 자기 준비 토글 가능
                 readyButton.setText(isReady ? "준비 해제" : "준비 완료");
             }
             readyButton.setEnabled(true);
         } else {
-            // 일반 플레이어
             readyButton.setText(isReady ? "준비 해제" : "준비 완료");
             readyButton.setEnabled(true);
         }
     }
 
-
-    /** 준비 상태를 토글하거나, 방장이면 게임 시작을 누르는 메소드 */
+    /**
+     * 준비 토글 또는 방장일 경우 게임 시작 요청
+     */
     private void toggleReadyOrStart() {
-        // 방장이고 버튼 텍스트가 "게임 시작"이면, 이제는 READY가 아니라 GAME_START_REQ 전송
+        // 방장 + 모두 준비 완료 → 게임 시작 요청
         if (isRoomCreator && "게임 시작".equals(readyButton.getText())) {
             Map<String, String> data = new HashMap<>();
             data.put("roomId", currentRoomId);
-            // playerId를 굳이 보낼 필요는 없지만, 보내도 되고 안 보내도 됨 (서버에서 this.playerId 사용)
             data.put("playerId", myPlayerId);
-
             connection.sendMessage(Protocol.GAME_START_REQ, data);
             return;
         }
 
-        // 그 외(일반적인 준비/해제 토글)
+        // 그 외에는 준비 토글
         isReady = !isReady;
         sendReadyRequest(isReady);
     }
 
-    /**
-     * GAME_READY 메시지를 서버에 전송합니다.
-     */
     private void sendReadyRequest(boolean status) {
         Map<String, String> data = new HashMap<>();
         data.put("playerId", myPlayerId);
-        data.put("ready", String.valueOf(status)); // true 또는 false 전송
-
+        data.put("ready", String.valueOf(status));
         connection.sendMessage(Protocol.GAME_READY, data);
     }
 
-    /**
-     * 팀 변경 요청을 서버에 전송합니다.
-     */
     private void requestTeamChange(int newTeam) {
         if (isReady) {
-            JOptionPane.showMessageDialog(this, "준비 상태에서는 팀을 변경할 수 없습니다.", "경고", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    "준비 상태에서는 팀을 변경할 수 없습니다.",
+                    "경고",
+                    JOptionPane.WARNING_MESSAGE
+            );
             return;
         }
-        // ROOM_JOIN_REQ를 재전송하여 팀 변경 요청
+
         Map<String, String> data = new HashMap<>();
         data.put("roomId", currentRoomId);
         data.put("team", String.valueOf(newTeam));
         connection.sendMessage(Protocol.ROOM_JOIN_REQ, data);
     }
 
-    /**
-     * 방 나가기 요청을 서버에 전송하고 로비로 전환합니다.
-     */
     private void requestLeaveRoom() {
-        if (JOptionPane.showConfirmDialog(this, "정말로 방을 나가시겠습니까?", "방 나가기", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
-            // ROOM_LEAVE_REQ|데이터길이|playerId:P001
+        Window parent = SwingUtilities.getWindowAncestor(this);
+
+        LeaveRoomDialog dialog = new LeaveRoomDialog(parent, () -> {
+            // "예" 눌렀을 때 실행할 실제 로직
             Map<String, String> data = new HashMap<>();
             data.put("playerId", myPlayerId);
             connection.sendMessage(Protocol.ROOM_LEAVE_REQ, data);
 
-            // 서버의 응답을 기다리지 않고 즉시 UI를 로비로 전환
             mainFrame.switchToLobby();
-        }
+        });
+
+        dialog.setVisible(true);
     }
 }
