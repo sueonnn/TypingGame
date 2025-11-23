@@ -4,14 +4,14 @@ import common.Protocol;
 
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.Map;
-import java.util.ArrayList; // 추가
-import java.util.List;     // 추가
-import java.util.HashMap;  // 추가
+
+import common.WordPool;
+import common.Player;
+import java.util.concurrent.*;
+
+import server.ClientHandler;
 
 public class GameServer {
     private static final int PORT = 12345;
@@ -21,28 +21,55 @@ public class GameServer {
     // 방 목록 관리
     private final Map<String, GameRoom> rooms = Collections.synchronizedMap(new HashMap<>());
 
+    // 게임 로직 인스턴스 저장 (Room ID -> GameLogic)
+    private final Map<String, GameLogic> activeGames = new HashMap<>();
+
     // 플레이어 ID 생성을 위한 카운터
     private final AtomicInteger playerIdCounter = new AtomicInteger(0);
+
+    private final WordPool wordPool = new WordPool();              // 단어 풀
+    private final ScheduledExecutorService scheduler =
+            Executors.newScheduledThreadPool(2);                   // 게임 타이머용
+    private final ConcurrentHashMap<String, GameLogic> games =
+            new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
         new GameServer().startServer();
     }
 
+    public GameRoom getRoom(String roomId) {
+        return rooms.get(roomId);
+    }
+
+    public ClientHandler getClientById(String playerId) {
+        synchronized (clients) { // synchronizedSet 이라 순회할 땐 동기화 필요
+            for (ClientHandler ch : clients) {
+                if (playerId.equals(ch.getPlayerId())) {
+                    return ch;  // 찾으면 바로 반환
+                }
+            }
+        }
+        return null; // 못 찾으면 null
+    }
+
+
+
+
     public void startServer() {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
-            System.out.println("✅ 서버 시작됨. Port: " + PORT);
+            System.out.println("서버 시작됨. Port: " + PORT);
 
             while (true) {
                 //
                 Socket clientSocket = serverSocket.accept();
-                System.out.println("⭐ 새 클라이언트 연결 수락: " + clientSocket.getInetAddress());
+                System.out.println(" 새 클라이언트 연결 수락: " + clientSocket.getInetAddress());
 
                 // 새로운 스레드에서 클라이언트 처리
                 ClientHandler handler = new ClientHandler(clientSocket, this);
                 new Thread(handler).start();
             }
         } catch (Exception e) {
-            System.err.println("❌ 서버 오류: " + e.getMessage());
+            System.err.println(" 서버 오류: " + e.getMessage());
         }
     }
 
@@ -65,20 +92,33 @@ public class GameServer {
     }
 
     /**
+     * 특정 방의 모든 멤버에게 ROOM_UPDATE 메시지를 전송합니다.
+     */
+    public void broadcastRoomUpdate(GameRoom room) {
+        Map<String, String> data = new HashMap<>();
+        data.put("roomId", room.getRoomId());
+        data.put("roomName", room.getRoomName());
+        data.put("players", room.getPlayersProtocolString());
+        data.put("roomCreatorId", room.getRoomCreatorId());
+
+        for (ClientHandler ch : room.getPlayers().values().stream()
+                .map(p -> getClientById(p.getPlayerId())) // ⭐ server → getClientById 그대로 사용
+                .filter(Objects::nonNull)
+                .toList()) {
+
+            ch.sendMessage(Protocol.ROOM_UPDATE, data);
+        }
+    }
+
+
+
+    /**
      * 다음 플레이어 ID를 부여합니다.
      */
     public int getNextPlayerId() {
         return playerIdCounter.incrementAndGet();
     }
 
-    /**
-     * 모든 클라이언트에게 메시지를 브로드캐스트합니다. (추후 GAME_UPDATE 등에 사용)
-     */
-    public void broadcast(String type, Map<String, String> data) {
-        for (ClientHandler client : clients) {
-            client.sendMessage(type, data);
-        }
-    }
 
     /**
      * 현재 모든 방 목록을 프로토콜 응답 형식으로 반환합니다.
@@ -111,6 +151,210 @@ public class GameServer {
         rooms.put(newRoom.getRoomId(), newRoom);
         System.out.println("방 생성됨: " + newRoom.getRoomName() + " (" + newRoom.getRoomId() + ")");
         return newRoom;
+    }
+
+    // --- GAME START & END 핸들러 ---
+
+    /**
+     * 게임을 시작하고 GAME_START 메시지를 브로드캐스트합니다.
+     */
+    // GameServer 안에 추가
+    public void startGame(GameRoom room) {
+        String roomId = room.getRoomId();
+
+        // 이미 게임 중이면 무시
+        if (games.containsKey(roomId)) return;
+
+        // 1) 단어 30개 랜덤 뽑기
+        java.util.List<String> words = wordPool.getRandomWords(30);
+        if (words.size() < 30) {
+            System.out.println("경고: 단어가 30개보다 적습니다. size=" + words.size());
+        }
+
+        // 2) GameLogic 생성
+        GameLogic logic = new GameLogic(room, words, scheduler, this);
+        games.put(roomId, logic);
+
+        // 3) 방 상태 playing 으로
+        room.startGame();
+
+        // 4) ROOM_UPDATE 로 상태 갱신 (로비/방 UI 표현용)
+        broadcastRoomUpdate(room);
+
+        // 5) GAME_START 브로드캐스트 (초기 보드 + 제한시간)
+        java.util.Map<String, String> data = new java.util.HashMap<>();
+        data.put("roomId", roomId);
+        data.put("board", logic.toBoardString());                    // "사과,1/바나나,2/..."
+        data.put("timeLimit", String.valueOf(GameLogic.GAME_DURATION));
+
+        broadcastToRoom(room, common.Protocol.GAME_START, data);
+
+        // 6) 타이머 시작
+        logic.start();
+    }
+
+
+    void broadcastToRoom(GameRoom room, String type, java.util.Map<String, String> data) {
+        synchronized (clients) {
+            for (ClientHandler ch : clients) {
+                GameRoom cr = ch.getCurrentRoom();
+                if (cr != null && cr.getRoomId().equals(room.getRoomId())) {
+                    ch.sendMessage(type, data);
+                }
+            }
+        }
+    }
+
+    /**
+     * GAME_END 메시지를 브로드캐스트합니다.
+     */
+    public void broadcastGameEnd(GameRoom room, int score1, int score2) {
+        Map<String, String> data = new HashMap<>();
+        data.put("winner", score1 > score2 ? "1" : (score2 > score1 ? "2" : "0"));
+        data.put("team1Score", String.valueOf(score1));
+        data.put("team2Score", String.valueOf(score2));
+        // TODO: mvp:P001:15 추가
+
+        broadcast(room, Protocol.GAME_END, data);
+        activeGames.remove(room.getRoomId()); // 게임 종료 후 로직 제거
+    }
+
+    // --- 실시간 업데이트 브로드캐스트 ---
+
+    /**
+     * WORD_CAPTURE 메시지를 브로드캐스트합니다.
+     */
+    public void broadcastWordCapture(GameRoom room, int wordIndex, int team, String capturedBy, int points) {
+        Map<String, String> data = new HashMap<>();
+        data.put("wordIndex", String.valueOf(wordIndex));
+        data.put("team", String.valueOf(team));
+        data.put("capturedBy", capturedBy);
+        data.put("points", String.valueOf(points));
+
+        broadcast(room, Protocol.WORD_CAPTURE, data);
+    }
+
+    /**
+     * GAME_STATE 메시지를 브로드캐스트합니다.
+     */
+    public void broadcastGameState(GameRoom room, int time, int score1, int score2, String wordStates) {
+        Map<String, String> data = new HashMap<>();
+        data.put("time", String.valueOf(time));
+        data.put("team1Score", String.valueOf(score1));
+        data.put("team2Score", String.valueOf(score2));
+        data.put("wordStates", wordStates);
+
+        broadcast(room, Protocol.GAME_STATE, data);
+    }
+
+    /**
+     * 특정 방의 모든 멤버에게 메시지를 전송합니다.
+     */
+    public void broadcast(GameRoom room, String type, Map<String, String> data) {
+
+        // Player 객체의 ID를 가져와서, GameServer의 전체 클라이언트 목록(clients)에서 해당 ClientHandler를 찾습니다.
+        for (common.Player playerInRoom : room.getPlayers().values()) {
+
+            String targetPlayerId = playerInRoom.getPlayerId();
+
+            // GameServer에 연결된 모든 ClientHandler를 순회합니다.
+            for (ClientHandler clientHandler : clients) {
+
+                // Player ID가 일치하는 ClientHandler를 찾습니다.
+                if (clientHandler.getPlayerId().equals(targetPlayerId)) {
+
+                    clientHandler.sendMessage(type, data);
+                    break; // 찾았으니 다음 플레이어로 이동
+                }
+            }
+        }
+    }
+    // --- WORD_INPUT 핸들러 ---
+
+    /**
+     * ClientHandler가 WORD_INPUT을 받으면 호출하는 메소드
+     */
+    // GameServer 안에 추가
+    public void handleWordInput(String roomId, String playerId, String wordContent) {
+        GameLogic logic = games.get(roomId);
+        if (logic == null) {
+            return; // 게임 안 열려있으면 무시
+        }
+
+        GameRoom room = logic.getRoom();
+        Player player = room.getPlayers().get(playerId);
+        if (player == null) return;
+
+        int team = player.getTeamNumber();
+        boolean changed = logic.applyWord(team, wordContent);
+        if (!changed) return; // 보드 변화 없으면 굳이 브로드캐스트 안 함
+
+        java.util.Map<String, String> data = new java.util.HashMap<>();
+        data.put("roomId", roomId);
+        data.put("board", logic.toBoardString());
+        data.put("score1", String.valueOf(logic.getScore1()));
+        data.put("score2", String.valueOf(logic.getScore2()));
+        data.put("timeLeft", String.valueOf(logic.getRemainingSeconds()));
+
+        broadcastToRoom(room, common.Protocol.GAME_UPDATE, data);
+    }
+
+
+    /**
+    * 특정 플레이어 ID를 가진 클라이언트에게 ERROR 메시지를 전송합니다.
+    * (GameLogic에서 잘못된 단어 입력 등에 사용)
+    */
+    public void sendError(String targetPlayerId, String errorCode, String errorMessage) { // ⭐ 이 메소드를 추가해야 합니다.
+        Map<String, String> data = new HashMap<>();
+        data.put("code", errorCode);
+        data.put("message", errorMessage);
+
+        // 전체 클라이언트 목록에서 대상 플레이어를 찾아 메시지를 전송
+        for (ClientHandler handler : clients) {
+            if (handler.getPlayerId() != null && handler.getPlayerId().equals(targetPlayerId)) {
+                handler.sendMessage(Protocol.ERROR, data);
+                return; // 찾았으니 종료
+            }
+        }
+    }
+
+    public void onGameTick(GameLogic logic) {
+        GameRoom room = logic.getRoom();
+
+        java.util.Map<String, String> data = new java.util.HashMap<>();
+        data.put("roomId", room.getRoomId());
+        data.put("board", logic.toBoardString());
+        data.put("score1", String.valueOf(logic.getScore1()));
+        data.put("score2", String.valueOf(logic.getScore2()));
+        data.put("timeLeft", String.valueOf(logic.getRemainingSeconds()));
+
+        broadcastToRoom(room, common.Protocol.GAME_UPDATE, data);
+    }
+
+    public void onGameEnd(GameLogic logic) {
+        GameRoom room = logic.getRoom();
+        String roomId = room.getRoomId();
+
+        games.remove(roomId);
+
+        int score1 = logic.getScore1();
+        int score2 = logic.getScore2();
+        String winner;
+        if (score1 > score2) winner = "1";
+        else if (score2 > score1) winner = "2";
+        else winner = "DRAW"; // 무승부
+
+        java.util.Map<String, String> data = new java.util.HashMap<>();
+        data.put("roomId", roomId);
+        data.put("winner", winner);
+        data.put("score1", String.valueOf(score1));
+        data.put("score2", String.valueOf(score2));
+
+        broadcastToRoom(room, common.Protocol.GAME_END, data);
+
+        // 방 상태 waiting 으로 + ready 리셋
+        room.endGame();               // 이미 구현됨 :contentReference[oaicite:2]{index=2}
+        broadcastRoomUpdate(room);    // 로비/방에서 다시 waiting 으로 보이게
     }
 
 }

@@ -19,7 +19,7 @@ public class LobbyPanel extends JPanel {
     private final DefaultTableModel tableModel;
     private final JTable roomTable;
 
-    public LobbyPanel(ServerConnection connection, String playerName, String playerId) {
+    public LobbyPanel(ServerConnection connection, String playerName, String playerId,MainFrame mainFrame) {
         this.connection = connection;
         this.playerName = playerName;
         this.playerId = playerId;

@@ -8,9 +8,13 @@ import client.GameClient;
 public class MainFrame extends JFrame {
     private final ServerConnection connection;
 
+    // MainFrame이 현재 플레이어 ID를 직접 관리하도록 변수 추가
+    private String currentPlayerId;
+
     // UI 전환을 위한 요소
     private final JPanel contentPanel; // 내용을 담을 CardLayout 패널
     private JPanel currentPanel; // 현재 화면에 표시 중인 패널 참조
+    private LobbyPanel lobbyPanel;
 
     // 로그인 UI 요소
     private JTextField nameField;
@@ -22,6 +26,7 @@ public class MainFrame extends JFrame {
         super("판뒤집기 - 로그인");
 
         this.connection = new ServerConnection(this);
+        this.currentPlayerId = null;
 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(1600, 900);
@@ -41,10 +46,11 @@ public class MainFrame extends JFrame {
      * 로그인 화면의 UI 컴포넌트를 초기화하고 contentPanel에 추가합니다.
      */
     private void initializeLoginComponent() {
+        // ... (UI 테마 관련 코드는 생략하고, 기능 코드만 유지합니다. UITheme, BackgroundPanel, RoundJTextField 등이 import되어 있다고 가정합니다.) ...
 
-        // 1. 배경 이미지 로드
+        // 1. 배경 이미지 로드 (이 코드는 UITheme 및 커스텀 클래스에 의존합니다. 유지)
         Image bgImage = new ImageIcon(
-                getClass().getResource("/tg_start.png")   // images 폴더가 Source Folder라면 이 경로
+                getClass().getResource("/tg_start.png")
         ).getImage();
 
         // 2. 배경을 그리는 패널 사용
@@ -62,26 +68,25 @@ public class MainFrame extends JFrame {
         gbcCenter.fill = GridBagConstraints.NONE;
         gbcCenter.insets = new Insets(10, 10, 10, 10);
 
-        // 1-1. 맨 위 빈 공간 (내용을 아래로 밀어내는 역할)
+        // 1-1. 맨 위 빈 공간
         gbcCenter.gridy = 0;
         gbcCenter.weighty = 1;
         center.add(Box.createVerticalStrut(0), gbcCenter);
 
         // 1-2. 큰 제목 "판뒤집기"
         JLabel titleLabel = new JLabel(" ", SwingConstants.CENTER);
-        // 제목 더 크게
-        titleLabel.setFont(UITheme.TITLE_FONT); // 72pt 정도, 원하면 숫자 조정
+        titleLabel.setFont(UITheme.TITLE_FONT);
         titleLabel.setForeground(UITheme.ACCENT);
 
         gbcCenter.gridy = 1;
-        gbcCenter.weighty = 1;                 // 제목 자체는 고정 높이
+        gbcCenter.weighty = 1;
         gbcCenter.anchor = GridBagConstraints.CENTER;
         center.add(titleLabel, gbcCenter);
 
         // 1-3. 닉네임/서버IP/게임 시작 폼 패널
         JPanel formPanel = new JPanel(new GridBagLayout());
         formPanel.setOpaque(false);
-        formPanel.setPreferredSize(new Dimension(700, 300));  // 전체 폼 크기
+        formPanel.setPreferredSize(new Dimension(700, 300));
 
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(10, 10, 10, 10);
@@ -114,21 +119,21 @@ public class MainFrame extends JFrame {
         gbc.gridx = 1; gbc.gridy = 1;
         formPanel.add(ipField, gbc);
 
-        // 게임 시작 버튼 (두 줄 높이)
+        // 게임 시작 버튼
         loginButton = new RoundButton("게임 시작");
         loginButton.setFont(UITheme.BUTTON_FONT);
         loginButton.setPreferredSize(new Dimension(150, 90));
         loginButton.addActionListener(e -> attemptLogin());
 
         gbc.gridx = 2; gbc.gridy = 0;
-        gbc.gridheight = 2;                           // 닉네임/서버IP 두 줄 합치기
+        gbc.gridheight = 2;
         gbc.anchor = GridBagConstraints.CENTER;
         formPanel.add(loginButton, gbc);
 
         // 폼 패널을 중앙 패널의 아래쪽에 배치
         gbcCenter.gridy = 2;
-        gbcCenter.weighty = 0;                        // 제목 바로 아래 위치
-        gbcCenter.anchor = GridBagConstraints.NORTH;  // 위쪽으로 붙이기
+        gbcCenter.weighty = 0;
+        gbcCenter.anchor = GridBagConstraints.NORTH;
         center.add(formPanel, gbcCenter);
 
         // ===== 2. 하단 상태 표시 =====
@@ -144,7 +149,6 @@ public class MainFrame extends JFrame {
         contentPanel.add(loginView, "Login");
         currentPanel = loginView;
     }
-
 
 
     /**
@@ -177,9 +181,9 @@ public class MainFrame extends JFrame {
      */
     public void handleLoginSuccess(String playerName, String playerId) {
         updateStatus(playerName + "님, 로그인 성공!");
+        this.currentPlayerId = playerId;
 
-        // 로비 패널 생성
-        LobbyPanel lobbyPanel = new LobbyPanel(connection, playerName, playerId);
+        this.lobbyPanel = new LobbyPanel(connection, playerName, playerId, this);
 
         // 패널 전환
         contentPanel.add(lobbyPanel, "Lobby");
@@ -188,8 +192,7 @@ public class MainFrame extends JFrame {
         currentPanel = lobbyPanel; // 현재 패널 업데이트
 
         setTitle("판뒤집기 - 로비"); // 프레임 제목 변경
-        // 로그인 버튼 재활성화 (로그인 화면으로 돌아갈 경우를 대비)
-        loginButton.setEnabled(true);
+        loginButton.setEnabled(true); // 로그인 버튼 재활성화 (로그인 화면으로 돌아갈 경우를 대비)
     }
 
     /**
@@ -205,4 +208,94 @@ public class MainFrame extends JFrame {
     public JPanel getCurrentPanel() {
         return currentPanel;
     }
+
+    /**
+     * 현재 접속한 플레이어의 ID를 반환합니다. (RoomPanel 생성 시 사용)
+     */
+    public String getPlayerId() { // ⭐ getPlayerId() 메소드 추가
+        return currentPlayerId;
+    }
+
+    /**
+     * 로비에서 방 입장 성공 시, RoomPanel로 전환합니다.
+     */
+    public void switchToRoom(String roomId, String roomName, String playersString, String roomCreatorId) {
+        String myId = getPlayerId();
+
+        RoomPanel roomPanel = new RoomPanel(this, connection, currentPlayerId);
+
+        roomPanel.initializeRoom(roomId, roomName, playersString, roomCreatorId);
+
+        contentPanel.add(roomPanel, "Room");
+        CardLayout cl = (CardLayout) (contentPanel.getLayout());
+        cl.show(contentPanel, "Room");
+        currentPanel = roomPanel;
+
+        setTitle("판뒤집기 - " + roomName);
+    }
+
+    /**
+     * GAME_START 수신 시, 인게임 준비 화면(Waiting)으로 전환합니다.
+     */
+    public void switchToWaiting(String wordList, int timeLimit) {
+        WaitingPanel waitingPanel = new WaitingPanel(this, wordList, timeLimit);
+
+        contentPanel.add(waitingPanel, "Waiting");
+        CardLayout cl = (CardLayout) (contentPanel.getLayout());
+        cl.show(contentPanel, "Waiting");
+        currentPanel = waitingPanel;
+
+        setTitle("판뒤집기 - 게임 준비");
+    }
+
+    /**
+     * WaitingPanel 카운트다운 종료 후 인게임 패널로 전환합니다.
+     */
+    public void switchToGame(String wordList) { // GAME_START 처리
+        String myId = getPlayerId();
+
+        GamePanel gamePanel = new GamePanel(connection, myId);
+        gamePanel.initializeGame(wordList); // 단어 목록으로 게임 초기화
+
+        contentPanel.add(gamePanel, "Game");
+        CardLayout cl = (CardLayout) (contentPanel.getLayout());
+        cl.show(contentPanel, "Game");
+        currentPanel = gamePanel;
+
+        setTitle("판뒤집기 - 게임 중");
+        gamePanel.requestFocusInWindow(); // 입력 필드에 포커스
+    }
+
+    /**
+     * GAME_END 수신 시, 결과 화면으로 전환합니다.
+     */
+    public void switchToGameEnd(String winner, int score1, int score2, String mvp) { // GAME_END 처리
+        GameEndPanel endPanel = new GameEndPanel(this);
+        endPanel.updateResults(winner, score1, score2, mvp);
+
+        contentPanel.add(endPanel, "GameEnd");
+        CardLayout cl = (CardLayout) (contentPanel.getLayout());
+        cl.show(contentPanel, "GameEnd");
+        currentPanel = endPanel;
+
+        setTitle("판뒤집기 - 게임 종료");
+    }
+
+
+    /**
+     * 방 나가기 성공/요청 시, 로비 화면으로 전환합니다.
+     */
+    public void switchToLobby() {
+        if (lobbyPanel != null) {
+            CardLayout cl = (CardLayout) (contentPanel.getLayout());
+            cl.show(contentPanel, "Lobby");
+            currentPanel = lobbyPanel;                 // 현재 패널 갱신
+            setTitle("판뒤집기 - 로비");
+
+            //로비 목록 새로고침
+            lobbyPanel.requestRoomList();
+        }
+    }
+
+
 }
