@@ -101,33 +101,47 @@ public class GameRoom {
     /**
      * 방 안의 모든 플레이어가 준비 완료 상태인지 확인합니다.
      */
+//    public boolean isAllReady() {
+//        if (currentPlayers == 0 || currentPlayers < maxPlayers) {
+//            // 인원이 최대 인원(2인용이면 2명)을 채우지 않았다면 시작 불가능
+//            return false;
+//        }
+//        for (common.Player player : players.values()) {
+//            if (!player.isReady()) {
+//                return false; // 한 명이라도 NOT READY면 false
+//            }
+//        }
+//        return true; // 모두 준비 완료
+//    }
+
     public boolean isAllReady() {
-        if (currentPlayers == 0 || currentPlayers < maxPlayers) {
-            // 인원이 최대 인원(2인용이면 2명)을 채우지 않았다면 시작 불가능
-            return false;
-        }
-        for (common.Player player : players.values()) {
-            if (!player.isReady()) {
-                return false; // 한 명이라도 NOT READY면 false
+        if (players.isEmpty()) return false;
+
+        for (Player p : players.values()) {
+            if (!p.isReady()) {
+                return false;
             }
         }
-        return true; // 모두 준비 완료
+        return true;
     }
 
     // --- 프로토콜 문자열 생성 ---
 
     /**
      * ROOM_UPDATE 메시지를 위한 플레이어 목록 문자열 생성
-     * 예: P001:정수연:1:ready;P002:김철수:2:notready
      */
+
     public String getPlayersProtocolString() {
         StringBuilder sb = new StringBuilder();
         for (Player p : players.values()) {
-            if (sb.length() > 0) sb.append(Protocol.DATA_SEPARATOR);
+            if (sb.length() > 0) {
+                sb.append(Protocol.FIELD_FIELD_SEPARATOR);
+            }
             sb.append(p.toProtocolString());
         }
         return sb.toString();
     }
+
 
     public boolean hasPlayer(String playerId) {
         return players.containsKey(playerId);

@@ -285,6 +285,20 @@ public class ServerConnection {
             return;
         }
 
+        // ★ 9-1. CHAT_MSG 처리 (방 채팅)
+        if (type.equals(Protocol.CHAT_MSG)) {
+            String senderName = getAttributeValue(dataPart, "senderName");
+            String message    = getAttributeValue(dataPart, "message");
+
+            SwingUtilities.invokeLater(() -> {
+                if (mainFrame.getCurrentPanel() instanceof RoomPanel roomPanel) {
+                    roomPanel.appendChatMessage(senderName, message);
+                }
+            });
+            return;
+        }
+
+
         // 10. ERROR 처리
         if (type.equals(Protocol.ERROR)) {
             String code    = getAttributeValue(dataPart, "code");
