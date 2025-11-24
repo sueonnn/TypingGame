@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 
 public class RoomPanel extends JPanel {
 
@@ -24,6 +26,9 @@ public class RoomPanel extends JPanel {
     private String roomCreatorId;
     private boolean isReady = false;       // 나의 준비 상태
     private boolean isRoomCreator = false; // 내가 방장인지 여부
+
+    // 내 팀 번호 (대기방 기준)
+    private int myTeam = 0;
 
     // ===== 상단 바 =====
     private JLabel titleLabel;
@@ -241,11 +246,27 @@ public class RoomPanel extends JPanel {
                         BorderFactory.createEmptyBorder(5, 10, 5, 10)
                 )
         );
-        //chatInputField.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
         chatInputField.setBounds(25, chatH - 70, chatW - 50, 45);
         chatPanel.add(chatInputField);
+        chatInputField.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent e) {
+                if ("메시지를 입력하세요".equals(chatInputField.getText())) {
+                    chatInputField.setText("");
+                }
+            }
 
-        // 아직 채팅 프로토콜은 없으니, UI만 준비해두고 액션은 나중에 추가 가능
+            @Override
+            public void focusLost(FocusEvent e) {
+                if (chatInputField.getText().trim().isEmpty()) {
+                    chatInputField.setText("메시지를 입력하세요");
+                }
+            }
+        });
+
+        // ★ 엔터 치면 서버로 CHAT_MSG 전송
+        chatInputField.addActionListener(e -> sendChatMessage());
+
     }
 
     // ================== 초기화 / 업데이트 ==================
@@ -291,12 +312,16 @@ public class RoomPanel extends JPanel {
 
         List<PlayerSlotInfo> team1 = new ArrayList<>();
         List<PlayerSlotInfo> team2 = new ArrayList<>();
+        List<PlayerSlotInfo> noTeam = new ArrayList<>(); // 팀 미지정 인원
 
         int totalPlayers = 0;
         int readyCount = 0;
 
-        String[] playerEntries = playersString.split(Protocol.DATA_SEPARATOR);
+        // playersString 은 이제 "P1:이름:1:ready@P2:이름:2:ready" 형태
+        String[] playerEntries = playersString.split(Protocol.FIELD_FIELD_SEPARATOR);
         for (String entry : playerEntries) {
+            if (entry == null || entry.isBlank()) continue;
+
             String[] details = entry.split(Protocol.FIELD_SEPARATOR);
             if (details.length < 4) continue;
 
@@ -322,32 +347,59 @@ public class RoomPanel extends JPanel {
             if (info.id.equals(myPlayerId)) {
                 isReady = "ready".equalsIgnoreCase(info.status);
                 isRoomCreator = info.isCreator;
+
+                // 내 팀 기억
+                myTeam = info.team;
+                // MainFrame 쪽에도 알려줌 (나중에 GamePanel 생성할 때 사용)
+                mainFrame.setMyTeam(info.team);
+
             }
 
-            if (info.team == 1) team1.add(info);
-            else if (info.team == 2) team2.add(info);
+
+            if (info.team == 1) {
+                team1.add(info);
+            } else if (info.team == 2) {
+                team2.add(info);
+            } else {
+                // 팀 미지정(0)도 따로 저장해서 슬롯에 표시
+                noTeam.add(info);
+            }
         }
 
         // 상단 바 텍스트 갱신
         titleLabel.setText(roomName + " - 참여 인원 : " + totalPlayers + "명");
 
-        // 팀1은 왼쪽 2칸, 팀2는 오른쪽 2칸
+        // 팀1은 왼쪽 2칸, 팀2는 오른쪽 2칸,
+        // 남는 자리는 팀 미지정(noTeam)으로 채운다.
         int idx = 0;
+        int noTeamIndex = 0;
+
+        // 왼쪽 2칸: 팀1 우선, 남으면 팀 미지정
         for (PlayerSlotInfo p : team1) {
             if (idx >= 2) break;
             applyPlayerToSlot(idx, p);
             idx++;
         }
+        while (idx < 2 && noTeamIndex < noTeam.size()) {
+            applyPlayerToSlot(idx, noTeam.get(noTeamIndex++));
+            idx++;
+        }
 
+        // 오른쪽 2칸: 팀2 우선, 남으면 팀 미지정 남은 사람
         idx = 2;
         for (PlayerSlotInfo p : team2) {
             if (idx >= 4) break;
             applyPlayerToSlot(idx, p);
             idx++;
         }
+        while (idx < 4 && noTeamIndex < noTeam.size()) {
+            applyPlayerToSlot(idx, noTeam.get(noTeamIndex++));
+            idx++;
+        }
 
         boolean allReady = (totalPlayers > 0 && readyCount == totalPlayers);
         updateReadyButtonState(allReady);
+
     }
 
     private void applyPlayerToSlot(int slotIndex, PlayerSlotInfo info) {
@@ -404,6 +456,8 @@ public class RoomPanel extends JPanel {
         // 그 외에는 준비 토글
         isReady = !isReady;
         sendReadyRequest(isReady);
+
+        updateReadyButtonState(false);  // allReady 여부는 서버에서 다시 내려줄 것
     }
 
     private void sendReadyRequest(boolean status) {
@@ -444,4 +498,56 @@ public class RoomPanel extends JPanel {
 
         dialog.setVisible(true);
     }
+    /**
+     * 채팅 입력창 내용을 서버로 전송합니다.
+     */
+    private void sendChatMessage() {
+        String text = chatInputField.getText();
+        if (text == null) return;
+
+        text = text.trim();
+        // 플레이스홀더나 빈 문자열은 무시
+        if (text.isEmpty() || "메시지를 입력하세요".equals(text)) {
+            return;
+        }
+
+        Map<String, String> data = new HashMap<>();
+        data.put("message", text);
+
+        // CHAT_MSG 전송
+        connection.sendMessage(Protocol.CHAT_MSG, data);
+
+        // 입력창 비우기
+        chatInputField.setText("");
+    }
+
+    /**
+     * 서버에서 온 채팅 메시지를 채팅창에 추가합니다.
+     */
+    public void appendChatMessage(String senderName, String message) {
+        if (message == null || message.trim().isEmpty()) {
+            return;
+        }
+
+        if (senderName == null || senderName.isEmpty()
+                || "알 수 없음".equals(senderName)) {
+            senderName = "알 수 없음";
+        }
+
+        String line = "[" + senderName + "] " + message;
+
+        if (chatArea.getText().isEmpty()) {
+            chatArea.setText(line);
+        } else {
+            chatArea.append("\n" + line);
+        }
+
+        // 스크롤을 항상 맨 아래로
+        chatArea.setCaretPosition(chatArea.getDocument().getLength());
+    }
+
+    public int getMyTeam() {
+        return myTeam;
+    }
+
 }

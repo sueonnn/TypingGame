@@ -11,6 +11,9 @@ public class MainFrame extends JFrame {
     // MainFrame이 현재 플레이어 ID를 직접 관리하도록 변수 추가
     private String currentPlayerId;
 
+    // 내 팀 번호 저장용
+    private int myTeam = 0;
+
     // UI 전환을 위한 요소
     private final JPanel contentPanel; // 내용을 담을 CardLayout 패널
     private JPanel currentPanel; // 현재 화면에 표시 중인 패널 참조
@@ -212,9 +215,22 @@ public class MainFrame extends JFrame {
     /**
      * 현재 접속한 플레이어의 ID를 반환합니다. (RoomPanel 생성 시 사용)
      */
-    public String getPlayerId() { // ⭐ getPlayerId() 메소드 추가
+    public String getPlayerId() { //  메소드 추가
         return currentPlayerId;
     }
+
+    public ServerConnection getConnection() {
+        return connection;
+    }
+
+    public void setMyTeam(int myTeam) {
+        this.myTeam = myTeam;
+    }
+
+    public int getMyTeam() {
+        return myTeam;
+    }
+
 
     /**
      * 로비에서 방 입장 성공 시, RoomPanel로 전환합니다.
@@ -251,12 +267,34 @@ public class MainFrame extends JFrame {
     /**
      * WaitingPanel 카운트다운 종료 후 인게임 패널로 전환합니다.
      */
-    public void switchToGame(String wordList) { // GAME_START 처리
-        String myId = getPlayerId();
+//    public void switchToGame(String wordList) { // GAME_START 처리
+//        String myId = getPlayerId();
+//        int myTeam = getMyTeam();   // 방에서 기억해둔 내 팀 번호
+//
+//        GamePanel gamePanel = new GamePanel(connection, myId, myTeam);
+//        gamePanel.initializeGame(wordList); // 단어 목록으로 게임 초기화
+//
+//        contentPanel.add(gamePanel, "Game");
+//        CardLayout cl = (CardLayout) (contentPanel.getLayout());
+//        cl.show(contentPanel, "Game");
+//        currentPanel = gamePanel;
+//
+//        setTitle("판뒤집기 - 게임 중");
+//        gamePanel.requestFocusInWindow(); // 입력 필드에 포커스
+//    }
+    // GAME_START 처리
+    public void switchToGame(String wordList) {
+        // 내 플레이어 ID와 대기방에서 저장해둔 내 팀 번호 가져오기
+        String myId   = getPlayerId();
+        int myTeam    = getMyTeam();
 
-        GamePanel gamePanel = new GamePanel(connection, myId);
-        gamePanel.initializeGame(wordList); // 단어 목록으로 게임 초기화
+        // GamePanel 생성자: (ServerConnection, String myPlayerId, int myTeam)
+        GamePanel gamePanel = new GamePanel(connection, myId, myTeam);
 
+        // 단어 목록으로 게임 초기화
+        gamePanel.initializeGame(wordList);
+
+        // 패널 전환
         contentPanel.add(gamePanel, "Game");
         CardLayout cl = (CardLayout) (contentPanel.getLayout());
         cl.show(contentPanel, "Game");
@@ -266,12 +304,15 @@ public class MainFrame extends JFrame {
         gamePanel.requestFocusInWindow(); // 입력 필드에 포커스
     }
 
+
+
+
     /**
      * GAME_END 수신 시, 결과 화면으로 전환합니다.
      */
     public void switchToGameEnd(String winner, int score1, int score2, String mvp) { // GAME_END 처리
         GameEndPanel endPanel = new GameEndPanel(this);
-        endPanel.updateResults(winner, score1, score2, mvp);
+        endPanel.updateResults(winner, score1, score2);
 
         contentPanel.add(endPanel, "GameEnd");
         CardLayout cl = (CardLayout) (contentPanel.getLayout());
