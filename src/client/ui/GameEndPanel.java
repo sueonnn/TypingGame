@@ -2,63 +2,170 @@ package client.ui;
 
 import javax.swing.*;
 import java.awt.*;
-import common.Protocol;
 
 public class GameEndPanel extends JPanel {
+
     private final MainFrame mainFrame;
 
-    // A, B, C 영역 변수
-    private final JLabel resultLabel;
-    private final JLabel scoreLabel;
-    private final JLabel mvpLabel;
+    private JLabel resultLabel;     // "1팀 승리!" / "2팀 승리!" / "무승부"
+    private JLabel scoreLabel;      // "최종 스코어: 1팀 15점 vs 2팀 13점"
+    private JLabel subLabel;        // 한 줄 안내 문구
+    private JLabel team1Label;      // 왼쪽 팀 점수 (색상 강조용)
+    private JLabel team2Label;      // 오른쪽 팀 점수
 
     public GameEndPanel(MainFrame mainFrame) {
         this.mainFrame = mainFrame;
-        setLayout(new BorderLayout(20, 20));
-        setBorder(BorderFactory.createEmptyBorder(50, 50, 50, 50));
 
-        // 중앙 결과 표시 영역
-        JPanel resultPanel = new JPanel(new GridLayout(3, 1, 10, 10));
+        setLayout(new BorderLayout());
+        setOpaque(false);
 
-        // A. 결과 메시지
-        resultLabel = new JLabel("게임 종료!", SwingConstants.CENTER);
-        resultLabel.setFont(new Font("맑은 고딕", Font.BOLD, 40));
+        // ==== 배경 (칠판 이미지) ====
+        Image bgImage = new ImageIcon(
+                getClass().getResource("/tg_start1.png")
+        ).getImage();
 
-        // B. 최종 스코어
-        scoreLabel = new JLabel("팀 스코어: 0 vs 0", SwingConstants.CENTER);
-        scoreLabel.setFont(new Font("맑은 고딕", Font.PLAIN, 24));
+        BackgroundPanel root = new BackgroundPanel(bgImage);
+        root.setLayout(new BorderLayout());
+        add(root, BorderLayout.CENTER);
 
-        // C. MVP (선택 사항)
-        mvpLabel = new JLabel("MVP: 없음", SwingConstants.CENTER);
-        mvpLabel.setFont(new Font("맑은 고딕", Font.ITALIC, 18));
+        // ==== 중앙 카드 영역 ====
+        JPanel centerWrapper = new JPanel(new GridBagLayout());
+        centerWrapper.setOpaque(false);
+        root.add(centerWrapper, BorderLayout.CENTER);
 
-        resultPanel.add(resultLabel);
-        resultPanel.add(scoreLabel);
-        resultPanel.add(mvpLabel);
+        JPanel card = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
 
-        add(resultPanel, BorderLayout.CENTER);
+                int w = getWidth();
+                int h = getHeight();
+                int arc = 40;
 
-        // D. 제어 버튼
-        JButton lobbyButton = new JButton("로비로 돌아가기");
-        lobbyButton.setFont(new Font("맑은 고딕", Font.BOLD, 20));
-        lobbyButton.addActionListener(e -> mainFrame.switchToLobby()); // 로비로 전환
+                // 흰 카드 배경
+                g2.setColor(new Color(255, 255, 255, 240));
+                g2.fillRoundRect(0, 0, w - 1, h - 1, arc, arc);
 
-        add(lobbyButton, BorderLayout.SOUTH);
+                // 테두리
+                g2.setColor(Color.BLACK);
+                g2.setStroke(new BasicStroke(2f));
+                g2.drawRoundRect(1, 1, w - 3, h - 3, arc, arc);
+
+                g2.dispose();
+            }
+        };
+        card.setOpaque(false);
+        card.setLayout(new BorderLayout());
+        card.setPreferredSize(new Dimension(700, 350));
+        card.setBorder(BorderFactory.createEmptyBorder(40, 40, 40, 40));
+
+        centerWrapper.add(card);
+
+        // ===== 카드 상단: 결과 텍스트 =====
+        resultLabel = new JLabel("결과", SwingConstants.CENTER);
+        resultLabel.setFont(UITheme.TITLE_FONT.deriveFont(50f));
+        resultLabel.setForeground(Color.BLACK);
+        card.add(resultLabel, BorderLayout.NORTH);
+
+        // ===== 카드 중앙: 점수 정보 =====
+        JPanel centerPanel = new JPanel();
+        centerPanel.setOpaque(false);
+        centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
+        card.add(centerPanel, BorderLayout.CENTER);
+
+        scoreLabel = new JLabel("최종 스코어: -", SwingConstants.CENTER);
+        scoreLabel.setFont(UITheme.SUBTITLE_FONT.deriveFont(22f));
+        scoreLabel.setForeground(Color.DARK_GRAY);
+        scoreLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        subLabel = new JLabel("로비로 돌아가 새 게임을 시작해 보세요.", SwingConstants.CENTER);
+        subLabel.setFont(UITheme.NORMAL_FONT.deriveFont(18f));
+        subLabel.setForeground(new Color(90, 90, 90));
+        subLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        centerPanel.add(scoreLabel);
+        centerPanel.add(Box.createVerticalStrut(20));
+        centerPanel.add(subLabel);
+        centerPanel.add(Box.createVerticalStrut(25));
+
+        // 팀별 점수 한눈에 보이도록 가로 배치
+        JPanel teamScorePanel = new JPanel(new GridLayout(1, 2, 20, 0));
+        teamScorePanel.setOpaque(false);
+
+        team1Label = new JLabel("1팀: 0점", SwingConstants.CENTER);
+        team1Label.setFont(UITheme.SUBTITLE_FONT.deriveFont(24f));
+        team1Label.setOpaque(false);
+
+        team2Label = new JLabel("2팀: 0점", SwingConstants.CENTER);
+        team2Label.setFont(UITheme.SUBTITLE_FONT.deriveFont(24f));
+        team2Label.setOpaque(false);
+
+        teamScorePanel.add(team1Label);
+        teamScorePanel.add(team2Label);
+
+        centerPanel.add(teamScorePanel);
+
+        // ===== 하단: 로비로 돌아가기 버튼 =====
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 30));
+        bottomPanel.setOpaque(false);
+
+        RoundButton backButton = new RoundButton("로비로 돌아가기");
+        backButton.setFont(UITheme.BUTTON_FONT.deriveFont(22f));
+        backButton.setPreferredSize(new Dimension(260, 60));
+        backButton.addActionListener(e -> {
+            // 지금은 단순히 클라이언트 화면만 로비로 전환
+            // (방에서 나가는 프로토콜을 추가로 보내고 싶으면 여기서 처리)
+            mainFrame.switchToLobby();
+        });
+
+        bottomPanel.add(backButton);
+        root.add(bottomPanel, BorderLayout.SOUTH);
     }
 
     /**
-     * 서버로부터 받은 최종 결과로 UI를 업데이트합니다.
+     * GameServer.onGameEnd → MainFrame.switchToGameEnd에서 호출
+     *
+     * @param winner "1", "2", "DRAW"/"0" 등
+     * @param score1 1팀 점수
+     * @param score2 2팀 점수
      */
-    public void updateResults(String winner, int score1, int score2, String mvp) {
-        String winnerText = (winner.equals("1") ? "빨강팀 승리!" : (winner.equals("2") ? "파랑팀 승리!" : "무승부"));
-        resultLabel.setText(winnerText);
-        resultLabel.setForeground(winner.equals("1") ? Color.RED : (winner.equals("2") ? Color.BLUE : Color.GRAY));
+    public void updateResults(String winner, int score1, int score2) {
+        // 1. 결과 텍스트
+        String resultText;
+        if ("1".equals(winner)) {
+            resultText = "1팀 승리!";
+        } else if ("2".equals(winner)) {
+            resultText = "2팀 승리!";
+        } else {
+            resultText = "무승부";
+        }
+        resultLabel.setText(resultText);
 
-        scoreLabel.setText(String.format("최종 스코어: 팀 1 (%d) vs 팀 2 (%d)", score1, score2));
+        // 2. 기본 점수 문구
+        scoreLabel.setText(
+                String.format("최종 스코어: 1팀 %d점 vs 2팀 %d점", score1, score2)
+        );
 
-        if (mvp != null && !mvp.isEmpty()) {
-            // mvp 형식: P001:15 (ID:점수) -> ID만 표시한다고 가정
-            mvpLabel.setText("MVP: " + mvp.split(Protocol.FIELD_SEPARATOR)[0]);
+        // 3. 팀별 라벨 + 색상 강조
+        team1Label.setText("1팀 : " + score1 + "점");
+        team2Label.setText("2팀 : " + score2 + "점");
+
+        Color loseColor = new Color(120, 120, 120);
+        Color winColor1 = new Color(220, 80, 80);   // 빨강
+        Color winColor2 = new Color(50, 110, 220);  // 파랑
+
+        if ("1".equals(winner)) {
+            team1Label.setForeground(winColor1);
+            team2Label.setForeground(loseColor);
+        } else if ("2".equals(winner)) {
+            team1Label.setForeground(loseColor);
+            team2Label.setForeground(winColor2);
+        } else { // 무승부
+            team1Label.setForeground(new Color(200, 120, 120));
+            team2Label.setForeground(new Color(120, 140, 220));
         }
     }
 }

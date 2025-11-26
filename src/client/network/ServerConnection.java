@@ -181,13 +181,15 @@ public class ServerConnection {
         if (type.equals(Protocol.ROOM_JOIN_RES)) {
             String status = getAttributeValue(dataPart, "status");
             if (status.equals("SUCCESS")) {
-                SwingUtilities.invokeLater(() ->
-                        MessageDialog.showInfo(
-                                mainFrame,
-                                "알림",
-                                "방 입장 성공!"
-                        )
-                );
+            	 if (mainFrame.getCurrentPanel() instanceof LobbyPanel) {
+                     SwingUtilities.invokeLater(() ->
+                             MessageDialog.showInfo(
+                                     mainFrame,
+                                     "알림",
+                                     "방 입장 성공!"
+                             )
+                     );
+                 }
             } else {
                 String message = getAttributeValue(dataPart, "message");
                 SwingUtilities.invokeLater(() ->
@@ -284,6 +286,20 @@ public class ServerConnection {
             } catch (NumberFormatException ignored) {}
             return;
         }
+
+        // ★ 9-1. CHAT_MSG 처리 (방 채팅)
+        if (type.equals(Protocol.CHAT_MSG)) {
+            String senderName = getAttributeValue(dataPart, "senderName");
+            String message    = getAttributeValue(dataPart, "message");
+
+            SwingUtilities.invokeLater(() -> {
+                if (mainFrame.getCurrentPanel() instanceof RoomPanel roomPanel) {
+                    roomPanel.appendChatMessage(senderName, message);
+                }
+            });
+            return;
+        }
+
 
         // 10. ERROR 처리
         if (type.equals(Protocol.ERROR)) {

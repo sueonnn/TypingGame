@@ -97,6 +97,9 @@ public class ClientHandler implements Runnable {
             case Protocol.GAME_START_REQ:
                 handleGameStartRequest(dataPart);
                 break;
+            case Protocol.CHAT_MSG:
+                handleChatMessage(dataPart);
+                break;
         }
     }
 
@@ -389,6 +392,9 @@ public class ClientHandler implements Runnable {
     /**
      * GAME_START_REQ 처리: 방장 + 모두 준비 상태일 때만 게임 시작
      */
+    /**
+     * GAME_START_REQ 처리: 방장 + 모두 준비 상태일 때만 게임 시작
+     */
     private void handleGameStartRequest(String dataPart) {
         if (currentRoom == null) return;
 
@@ -400,13 +406,65 @@ public class ClientHandler implements Runnable {
 
         // 모두 ready인지 확인 (한 명이라도 notready면 시작 안 함)
         if (!currentRoom.isAllReady()) {
-            // 아직 준비 안 된 사람이 있으면 시작 안 함
+            // 아직 준비 안 된 사람이 있으면 시작 안 함 (지금은 조용히 무시)
             return;
+        }
+
+        // ★★★ 2인용 방이라면 팀 구성 추가 검사 ★★★
+        if (currentRoom.getMaxPlayers() == 2) {
+            int team1Count = 0;
+            int team2Count = 0;
+
+            for (Player p : currentRoom.getPlayers().values()) {
+                int t = p.getTeamNumber();
+                if (t == 1) team1Count++;
+                else if (t == 2) team2Count++;
+            }
+
+            // 2명이 모두 들어와 있고, 1팀 1명 / 2팀 1명이 아닌 경우 → 시작 불가
+            if (!(team1Count == 1 && team2Count == 1)) {
+                Map<String, String> errorData = new HashMap<>();
+                errorData.put("code", "E020");
+                errorData.put("message",
+                        "2인 경기에서는 두 플레이어가 서로 다른 팀을 선택해야 합니다.\n" +
+                                "팀을 다시 선택한 뒤 게임을 시작해 주세요.");
+
+                // 이 ClientHandler(= 방장 클라이언트)에게만 팝업 전송
+                sendMessage(Protocol.ERROR, errorData);
+                return;
+            }
         }
 
         // 여기서만 진짜 게임 시작
         server.startGame(currentRoom);
     }
+
+
+    /**
+     * CHAT_MSG 처리: 현재 방의 모든 플레이어에게 채팅을 브로드캐스트합니다.
+     */
+    private void handleChatMessage(String dataPart) {
+        // 방에 속해있지 않으면 무시
+        if (currentRoom == null) {
+            return;
+        }
+
+        String message = getAttributeValue(dataPart, "message");
+        if (message == null || message.trim().isEmpty()
+                || "알 수 없음".equals(message)) {
+            return;
+        }
+
+        Map<String, String> data = new HashMap<>();
+        data.put("roomId", currentRoom.getRoomId());
+        data.put("senderId", this.playerId);
+        data.put("senderName", this.playerName);
+        data.put("message", message);
+
+        // 같은 방 모든 인원에게 브로드캐스트
+        server.broadcastToRoom(currentRoom, Protocol.CHAT_MSG, data);
+    }
+
 
 
     // Getter 메소드
