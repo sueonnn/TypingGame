@@ -3,7 +3,6 @@ package client.ui;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.geom.RoundRectangle2D;
-import java.awt.AlphaComposite;
 
 public class RoundButton extends JButton {
 
@@ -12,7 +11,7 @@ public class RoundButton extends JButton {
     public RoundButton(String text) {
         super(text);
 
-        setOpaque(false);              // 완전 투명 컴포넌트
+        setOpaque(false);              // 부모 배경을 그대로 보이게
         setFocusPainted(false);
         setBorderPainted(false);
         setContentAreaFilled(false);
@@ -46,27 +45,22 @@ public class RoundButton extends JButton {
         int h = getHeight();
         int arc = 25;
 
-        // 1️⃣ 이전에 그려져 있던 내용 완전히 지우기 (투명으로 초기화)
-        g2.setComposite(AlphaComposite.Clear);
-        g2.fillRect(0, 0, w, h);
-        g2.setComposite(AlphaComposite.SrcOver);
-
-        // 2️⃣ 둥근 버튼 배경(그라데이션)
+        // 1) 기존 배경은 건드리지 않고, 그냥 둥근 버튼만 그린다.
         Color top = hover ? new Color(255, 185, 80) : new Color(255, 200, 100);
         Color bottom = hover ? new Color(255, 150, 30) : new Color(255, 160, 40);
         GradientPaint gp = new GradientPaint(0, 0, top, 0, h, bottom);
 
-        Shape round = new RoundRectangle2D.Float(0, 0, w - 1, h - 1, arc, arc);
+        Shape round = new RoundRectangle2D.Float(0.5f, 0.5f, w - 1f, h - 1f, arc, arc);
 
         g2.setPaint(gp);
         g2.fill(round);
 
-        // 3️⃣ 바깥 흰 테두리
+        // 2) 흰색 외곽선 (기존 스타일 유지)
         g2.setColor(Color.WHITE);
         g2.setStroke(new BasicStroke(3f));
         g2.draw(new RoundRectangle2D.Float(1.5f, 1.5f, w - 3f, h - 3f, arc, arc));
 
-        // 4️⃣ 텍스트
+        // 3) 텍스트
         g2.setFont(getFont());
         g2.setColor(Color.WHITE);
         FontMetrics fm = g2.getFontMetrics();
@@ -79,6 +73,6 @@ public class RoundButton extends JButton {
 
     @Override
     protected void paintBorder(Graphics g) {
-        
+        // 기본 테두리는 사용하지 않음
     }
 }

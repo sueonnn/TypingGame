@@ -296,11 +296,6 @@ public class LobbyPanel extends JPanel {
             int h = getHeight();
             int arc = 20;
 
-            // 먼저 기존 픽셀 완전히 삭제(얇은 선 제거)
-            g2.setComposite(AlphaComposite.Clear);
-            g2.fillRect(0, 0, w, h);
-            g2.setComposite(AlphaComposite.SrcOver);
-
             Color fill = selected ? new Color(255, 220, 120) : Color.WHITE;
 
             g2.setColor(fill);
@@ -355,11 +350,6 @@ public class LobbyPanel extends JPanel {
 
             int w = getWidth();
             int h = getHeight();
-
-            // 기존 픽셀 지우기
-            g2.setComposite(AlphaComposite.Clear);
-            g2.fillRect(0, 0, w, h);
-            g2.setComposite(AlphaComposite.SrcOver);
 
             // 직각 흰색 카드
             g2.setColor(Color.WHITE);
