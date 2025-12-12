@@ -11,7 +11,6 @@ import common.WordPool;
 import common.Player;
 import java.util.concurrent.*;
 
-import server.ClientHandler;
 
 public class GameServer {
     private static final int PORT = 12345;
@@ -50,6 +49,20 @@ public class GameServer {
             }
         }
         return null; // 못 찾으면 null
+    }
+
+    public boolean isPlayerNameTaken(String name) {
+        if (name == null) return false;
+
+        synchronized (clients) {
+            for (ClientHandler ch : clients) {
+                String existing = ch.getPlayerName();
+                if (name.equals(existing)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
 
@@ -102,7 +115,7 @@ public class GameServer {
         data.put("roomCreatorId", room.getRoomCreatorId());
 
         for (ClientHandler ch : room.getPlayers().values().stream()
-                .map(p -> getClientById(p.getPlayerId())) // ⭐ server → getClientById 그대로 사용
+                .map(p -> getClientById(p.getPlayerId()))
                 .filter(Objects::nonNull)
                 .toList()) {
 
@@ -158,7 +171,6 @@ public class GameServer {
     /**
      * 게임을 시작하고 GAME_START 메시지를 브로드캐스트합니다.
      */
-    // GameServer 안에 추가
     public void startGame(GameRoom room) {
         String roomId = room.getRoomId();
 
@@ -300,24 +312,6 @@ public class GameServer {
     }
 
 
-    /**
-    * 특정 플레이어 ID를 가진 클라이언트에게 ERROR 메시지를 전송합니다.
-    * (GameLogic에서 잘못된 단어 입력 등에 사용)
-    */
-    public void sendError(String targetPlayerId, String errorCode, String errorMessage) { // ⭐ 이 메소드를 추가해야 합니다.
-        Map<String, String> data = new HashMap<>();
-        data.put("code", errorCode);
-        data.put("message", errorMessage);
-
-        // 전체 클라이언트 목록에서 대상 플레이어를 찾아 메시지를 전송
-        for (ClientHandler handler : clients) {
-            if (handler.getPlayerId() != null && handler.getPlayerId().equals(targetPlayerId)) {
-                handler.sendMessage(Protocol.ERROR, data);
-                return; // 찾았으니 종료
-            }
-        }
-    }
-
     public void onGameTick(GameLogic logic) {
         GameRoom room = logic.getRoom();
 
@@ -353,8 +347,8 @@ public class GameServer {
         broadcastToRoom(room, common.Protocol.GAME_END, data);
 
         // 방 상태 waiting 으로 + ready 리셋
-        room.endGame();               // 이미 구현됨 :contentReference[oaicite:2]{index=2}
-        broadcastRoomUpdate(room);    // 로비/방에서 다시 waiting 으로 보이게
+        room.endGame();
+        broadcastRoomUpdate(room);
     }
 
 }

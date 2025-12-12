@@ -104,7 +104,7 @@ public class MainFrame extends JFrame {
 
         // 닉네임 입력칸
         nameField = new RoundJTextField(15);
-        nameField.setText("Player7");
+        nameField.setText("Player1");
         nameField.setPreferredSize(new Dimension(280, 40));
         gbc.gridx = 1; gbc.gridy = 0;
         formPanel.add(nameField, gbc);
@@ -196,7 +196,37 @@ public class MainFrame extends JFrame {
 
         setTitle("판뒤집기 - 로비"); // 프레임 제목 변경
         loginButton.setEnabled(true); // 로그인 버튼 재활성화 (로그인 화면으로 돌아갈 경우를 대비)
+        lobbyPanel.requestRoomList();
     }
+
+    /**
+     * 로그인 실패 시 처리 로직 (닉네임 중복)
+     */
+    public void handleLoginFailure(String reason) {
+        SwingUtilities.invokeLater(() -> {
+            String message;
+            if ("DUPLICATE_NAME".equals(reason)) {
+                message = "이미 사용 중인 닉네임입니다.\n다른 닉네임을 입력해 주세요.";
+                updateStatus("로그인 실패: 중복 닉네임");
+            } else {
+                message = "로그인에 실패했습니다.\n다시 시도해 주세요.";
+                updateStatus("로그인 실패");
+            }
+
+            JOptionPane.showMessageDialog(
+                    this,
+                    message,
+                    "로그인 실패",
+                    JOptionPane.ERROR_MESSAGE
+            );
+
+            // 다시 로그인 시도할 수 있도록 버튼/입력값 복구
+            loginButton.setEnabled(true);     // 다시 활성화
+            nameField.requestFocusInWindow(); // 닉네임 칸에 포커스
+            nameField.selectAll();            // 기존 닉네임 드래그 선택
+        });
+    }
+
 
     /**
      * 상태 레이블 텍스트 업데이트
@@ -311,7 +341,7 @@ public class MainFrame extends JFrame {
      * GAME_END 수신 시, 결과 화면으로 전환합니다.
      */
     public void switchToGameEnd(String winner, int score1, int score2, String mvp) { // GAME_END 처리
-        GameEndPanel endPanel = new GameEndPanel(this);
+        GameEndPanel endPanel = new GameEndPanel(this, connection, currentPlayerId);
         endPanel.updateResults(winner, score1, score2);
 
         contentPanel.add(endPanel, "GameEnd");

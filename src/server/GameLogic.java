@@ -1,4 +1,3 @@
-// server/GameLogic.java
 package server;
 
 import java.util.ArrayList;

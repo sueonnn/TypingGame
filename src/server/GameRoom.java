@@ -101,18 +101,6 @@ public class GameRoom {
     /**
      * 방 안의 모든 플레이어가 준비 완료 상태인지 확인합니다.
      */
-//    public boolean isAllReady() {
-//        if (currentPlayers == 0 || currentPlayers < maxPlayers) {
-//            // 인원이 최대 인원(2인용이면 2명)을 채우지 않았다면 시작 불가능
-//            return false;
-//        }
-//        for (common.Player player : players.values()) {
-//            if (!player.isReady()) {
-//                return false; // 한 명이라도 NOT READY면 false
-//            }
-//        }
-//        return true; // 모두 준비 완료
-//    }
 
     public boolean isAllReady() {
         if (players.isEmpty()) return false;
@@ -163,7 +151,7 @@ public class GameRoom {
      * 게임이 종료된 후 방의 상태를 정리합니다.
      * (플레이어의 ready 상태 초기화, 방 상태를 'waiting'으로 복귀 등)
      */
-    public void endGame() { // ⭐ 이 메소드를 추가해야 합니다.
+    public void endGame() {
         // 1. 방 상태를 'waiting'으로 복귀
         this.state = "waiting";
 
@@ -172,7 +160,6 @@ public class GameRoom {
             player.setReady(false);
         }
 
-        // TODO: 필요하다면 채팅 로그 정리 등 추가 작업 수행
         System.out.println("방 [" + roomName + "]의 게임이 종료되고 대기 상태로 돌아왔습니다.");
     }
 
