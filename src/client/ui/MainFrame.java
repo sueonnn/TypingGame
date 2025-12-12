@@ -196,6 +196,7 @@ public class MainFrame extends JFrame {
 
         setTitle("판뒤집기 - 로비"); // 프레임 제목 변경
         loginButton.setEnabled(true); // 로그인 버튼 재활성화 (로그인 화면으로 돌아갈 경우를 대비)
+        lobbyPanel.requestRoomList();
     }
 
     /**
