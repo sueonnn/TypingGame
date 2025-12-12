@@ -16,7 +16,7 @@ public class ClientHandler implements Runnable {
     private BufferedReader in;
     private String playerId;
     private String playerName;
-    private GameRoom currentRoom; // 현재 입장한 방 참조
+    private GameRoom currentRoom;
 
     public ClientHandler(Socket socket, GameServer server) {
         this.clientSocket = socket;
@@ -38,7 +38,7 @@ public class ClientHandler implements Runnable {
         } catch (Exception e) {
             System.out.println("클라이언트 연결 해제: " + (playerName != null ? playerName : "미로그인 사용자"));
         } finally {
-            // ⭐ 1. 방에 들어가 있었다면 방에서 제거
+            // 1. 방에 들어가 있었다면 방에서 제거
             try {
                 if (currentRoom != null && playerId != null) {
                     GameRoom roomToLeave = this.currentRoom;
@@ -53,10 +53,10 @@ public class ClientHandler implements Runnable {
                 // System.out.println("연결 종료 중 방 정리 오류: " + ignore.getMessage());
             }
 
-            // ⭐ 2. 클라이언트 목록에서 제거 (기존 코드)
+            // 2. 클라이언트 목록에서 제거
             server.removeClient(this);
 
-            // ⭐ 3. 소켓 닫기 (기존 코드)
+            // 3. 소켓 닫기
             try { clientSocket.close(); } catch (Exception ignored) {}
         }
     }
@@ -76,22 +76,22 @@ public class ClientHandler implements Runnable {
             case Protocol.LOGIN_REQ:
                 handleLoginRequest(dataPart);
                 break;
-            case Protocol.ROOM_LIST_REQ: // 방 목록 요청 처리 (추가)
+            case Protocol.ROOM_LIST_REQ: // 방 목록 요청 처리
                 handleRoomListRequest();
                 break;
-            case Protocol.ROOM_CREATE_REQ: // 방 생성 요청 처리 (추가)
+            case Protocol.ROOM_CREATE_REQ: // 방 생성 요청 처리
                 handleRoomCreateRequest(dataPart);
                 break;
-            case Protocol.ROOM_JOIN_REQ: // 방 입장 요청 처리 (추가)
+            case Protocol.ROOM_JOIN_REQ: // 방 입장 요청 처리
                 handleRoomJoinRequest(dataPart);
                 break;
-            case Protocol.GAME_READY: // 게임 준비/해제 처리 (추가)
+            case Protocol.GAME_READY: // 게임 준비/해제 처리
                 handleGameReadyRequest(dataPart);
                 break;
-            case Protocol.ROOM_LEAVE_REQ: // 방 나가기 요청 처리 (추가)
+            case Protocol.ROOM_LEAVE_REQ: // 방 나가기 요청 처리
                 handleRoomLeaveRequest();
                 break;
-            case Protocol.WORD_INPUT: // 단어 입력 요청 처리 (추가)
+            case Protocol.WORD_INPUT: // 단어 입력 요청 처리
                 handleWordInputRequest(dataPart);
                 break;
             case Protocol.GAME_START_REQ:
@@ -120,19 +120,46 @@ public class ClientHandler implements Runnable {
     /**
      * LOGIN_REQ 메시지 처리: 플레이어 정보 저장 후 LOGIN_RES 전송
      */
+//    private void handleLoginRequest(String dataPart) {
+//        // dataPart 예: playerName:정수연
+//        String playerName = getAttributeValue(dataPart, "playerName");
+//
+//        // 간단한 ID 부여 (실제로는 중복 검사 필요)
+//        this.playerId = "P" + server.getNextPlayerId();
+//        this.playerName = playerName;
+//
+//        // 서버에 클라이언트 등록
+//        server.addClient(this);
+//
+//        // LOGIN_RES 메시지 생성
+//        // LOGIN_RES|데이터길이|status:SUCCESS;playerId:P001;playerName:이름
+//        Map<String, String> responseData = new HashMap<>();
+//        responseData.put("status", "SUCCESS");
+//        responseData.put("playerId", this.playerId);
+//        responseData.put("playerName", this.playerName);
+//
+//        sendMessage(Protocol.LOGIN_RES, responseData);
+//    }
     private void handleLoginRequest(String dataPart) {
         // dataPart 예: playerName:정수연
         String playerName = getAttributeValue(dataPart, "playerName");
 
-        // 간단한 ID 부여 (실제로는 중복 검사 필요)
+        // 1. 닉네임 중복 검사 먼저
+        if (server.isPlayerNameTaken(playerName)) {
+            Map<String, String> responseData = new HashMap<>();
+            responseData.put("status", "FAIL");
+            responseData.put("reason", "DUPLICATE_NAME");
+            responseData.put("message", "이미 사용 중인 닉네임입니다.");
+            sendMessage(Protocol.LOGIN_RES, responseData);
+            return;
+        }
+
+        // 2. 중복 아니면 ID 부여 후 정상 로그인 처리
         this.playerId = "P" + server.getNextPlayerId();
         this.playerName = playerName;
 
-        // 서버에 클라이언트 등록
         server.addClient(this);
 
-        // LOGIN_RES 메시지 생성
-        // LOGIN_RES|데이터길이|status:SUCCESS;playerId:P001;playerName:이름
         Map<String, String> responseData = new HashMap<>();
         responseData.put("status", "SUCCESS");
         responseData.put("playerId", this.playerId);
@@ -207,62 +234,6 @@ public class ClientHandler implements Runnable {
     /**
      * ROOM_JOIN_REQ 처리: 방에 입장시키고 ROOM_JOIN_RES 전송 후 ROOM_UPDATE 브로드캐스트
      */
-//    private void handleRoomJoinRequest(String dataPart) {
-//        String roomId = getAttributeValue(dataPart, "roomId");
-//        int teamNumber = Integer.parseInt(getAttributeValue(dataPart, "team"));
-//
-//        GameRoom room = server.getRoom(roomId);
-//        Map<String, String> responseData = new HashMap<>();
-//
-//        if (room == null) {
-//            responseData.put("status", "FAIL");
-//            responseData.put("message", "E007: 존재하지 않는 방입니다.");
-//            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
-//            return;
-//        }
-//
-//        // 이미 그 방에 내가 들어가 있는 경우 → 그냥 성공 응답만 다시 보내고 끝
-//        if (room.hasPlayer(this.playerId)) {
-//            this.currentRoom = room; // 혹시나 null이면 다시 세팅
-//
-//            Player me = room.getPlayers().get(this.playerId);
-//            int myTeam = (me != null) ? me.getTeamNumber() : teamNumber;
-//
-//            responseData.put("status", "SUCCESS");
-//            responseData.put("team", String.valueOf(myTeam));
-//            responseData.put("players", room.getPlayersProtocolString());
-//            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
-//            // 이미 방 상태는 최신이라면 broadcast는 생략 가능하지만, 필요하면 유지
-//            // server.broadcastRoomUpdate(room);
-//            return;
-//        }
-//
-//        // 새로 입장하는 경우만 인원 수 체크
-//        if (room.getCurrentPlayers() >= room.getMaxPlayers()) {
-//            responseData.put("status", "FAIL");
-//            responseData.put("message", "E003: 방이 가득 찼습니다.");
-//            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
-//            return;
-//        }
-//
-//        // 진짜로 새로 추가
-//        Player player = new Player(this.playerId, this.playerName);
-//        if (room.addPlayer(player, teamNumber)) {
-//            this.currentRoom = room;
-//
-//            responseData.put("status", "SUCCESS");
-//            responseData.put("team", String.valueOf(teamNumber));
-//            responseData.put("players", room.getPlayersProtocolString());
-//            responseData.put("roomCreatorId", room.getRoomCreatorId());
-//            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
-//            server.broadcastRoomUpdate(room);
-//        } else {
-//            responseData.put("status", "FAIL");
-//            responseData.put("message", "알 수 없는 오류로 입장에 실패했습니다.");
-//            sendMessage(Protocol.ROOM_JOIN_RES, responseData);
-//        }
-//    }
-
     private void handleRoomJoinRequest(String dataPart) {
         String roomId = getAttributeValue(dataPart, "roomId");
         String teamStr = getAttributeValue(dataPart, "team");
@@ -389,9 +360,6 @@ public class ClientHandler implements Runnable {
         server.handleWordInput(currentRoom.getRoomId(), this.playerId, wordContent);
     }
 
-    /**
-     * GAME_START_REQ 처리: 방장 + 모두 준비 상태일 때만 게임 시작
-     */
     /**
      * GAME_START_REQ 처리: 방장 + 모두 준비 상태일 때만 게임 시작
      */

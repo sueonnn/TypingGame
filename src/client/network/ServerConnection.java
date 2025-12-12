@@ -15,8 +15,6 @@ import client.ui.MainFrame;
 import client.ui.LobbyPanel;
 import client.ui.RoomPanel;
 import client.ui.GamePanel;
-import client.ui.WaitingPanel;
-import client.ui.GameEndPanel;
 import client.ui.MessageDialog;
 import common.Protocol;
 
@@ -138,18 +136,38 @@ public class ServerConnection {
         String type = parts[0];
         String dataPart = parts[2];
 
-        // 1. LOGIN_RES 처리
+        // 1. LOGIN_RES 처리 (성공/실패)
         if (type.equals(Protocol.LOGIN_RES)) {
-            if (dataPart.contains("status" + Protocol.FIELD_SEPARATOR + "SUCCESS")) {
+            // status 필드에서 SUCCESS / FAIL 읽기
+            String status = getAttributeValue(dataPart, "status");
+
+            if ("SUCCESS".equals(status)) {
+                // 로그인 성공 케이스
                 String playerName = getAttributeValue(dataPart, "playerName");
                 String playerId   = getAttributeValue(dataPart, "playerId");
-                mainFrame.handleLoginSuccess(playerName, playerId);
+
+                // UI 작업은 EDT에서 실행
+                SwingUtilities.invokeLater(() ->
+                        mainFrame.handleLoginSuccess(playerName, playerId)
+                );
+
             } else {
-                String message = getAttributeValue(dataPart, "message");
-                mainFrame.updateStatus("로그인 실패: " + message);
+                // 로그인 실패 케이스 (닉네임 중복)
+                // 서버에서 reason 또는 message 둘 중 하나를 보낸다고 가정
+                String reason  = getAttributeValue(dataPart, "reason");   // 예: "DUPLICATE_NAME"
+                String message = getAttributeValue(dataPart, "message");  // 예: "닉네임이 이미 존재합니다"
+
+                // reason이 없으면 message를 reason처럼 사용
+                String reasonOrMessage = !"알 수 없음".equals(reason) ? reason : message;
+
+                // MainFrame에 실패 처리 위임
+                SwingUtilities.invokeLater(() ->
+                        mainFrame.handleLoginFailure(reasonOrMessage)
+                );
             }
             return;
         }
+
 
         // 2. ROOM_LIST_RES 처리
         if (type.equals(Protocol.ROOM_LIST_RES)) {
