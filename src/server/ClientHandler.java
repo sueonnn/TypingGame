@@ -120,26 +120,7 @@ public class ClientHandler implements Runnable {
     /**
      * LOGIN_REQ 메시지 처리: 플레이어 정보 저장 후 LOGIN_RES 전송
      */
-//    private void handleLoginRequest(String dataPart) {
-//        // dataPart 예: playerName:정수연
-//        String playerName = getAttributeValue(dataPart, "playerName");
-//
-//        // 간단한 ID 부여 (실제로는 중복 검사 필요)
-//        this.playerId = "P" + server.getNextPlayerId();
-//        this.playerName = playerName;
-//
-//        // 서버에 클라이언트 등록
-//        server.addClient(this);
-//
-//        // LOGIN_RES 메시지 생성
-//        // LOGIN_RES|데이터길이|status:SUCCESS;playerId:P001;playerName:이름
-//        Map<String, String> responseData = new HashMap<>();
-//        responseData.put("status", "SUCCESS");
-//        responseData.put("playerId", this.playerId);
-//        responseData.put("playerName", this.playerName);
-//
-//        sendMessage(Protocol.LOGIN_RES, responseData);
-//    }
+
     private void handleLoginRequest(String dataPart) {
         // dataPart 예: playerName:정수연
         String playerName = getAttributeValue(dataPart, "playerName");

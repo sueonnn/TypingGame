@@ -126,9 +126,6 @@ public class ServerConnection {
     /**
      * 서버 메시지를 처리하여 UI를 업데이트하는 로직
      */
-    /**
-     * 서버 메시지를 처리하여 UI를 업데이트하는 로직
-     */
     private void handleServerMessage(String rawMessage) {
         String[] parts = rawMessage.split("\\" + Protocol.DELIMITER, 3);
         if (parts.length < 3) return;
