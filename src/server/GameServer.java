@@ -139,7 +139,7 @@ public class GameServer {
      */
     public String getRoomListProtocolString() {
         if (rooms.isEmpty()) {
-            // 테스트를 위해 임시 방 2개 생성 (서버 시작 시 한 번 실행되어야 함)
+            // 임시 방 2개 생성
             createRoom("즐거운게임방", 4);
             createRoom("네트워크마스터", 2);
         }
